@@ -1,6 +1,7 @@
 from .core import OnionNetGraph
 from .utils import infer_property_type, map_categorical_property
 from typing import List, Any, Dict
+import numpy as np
 
 
 
@@ -80,66 +81,68 @@ class OnionNetPropertyManager:
         self, 
         encoded_prop_type: str,  # 'v' for vertex, 'e' for edge
         encoded_prop_name: str, 
-        new_prop_name: str = None, # defaults to f"{encoded_prop_name}_decoded"
-        mapping_dict: Dict[int, str] = None,  # defaults to self.core.vertex_categorical_mappings[encoded_prop_name]['int_to_str']
-        default_unmapped_label: str = 'Unknown'
+        new_prop_name: str = None,  # Defaults to f"{encoded_prop_name}_decoded"
+        mapping_dict: Dict[int, str] = None,  # Defaults based on core's mappings
+        default_label: str = 'Unknown'
     ) -> None:
         """
-        Creates a new property by mapping encoded integers to human-readable strings.
-
-        Parameters:
-            encoded_prop_type (str): Type of the property ('v' for vertex, 'e' for edge).
-            encoded_prop_name (str): Name of the existing encoded property.
-            new_prop_name (str, optional): Name of the new human-readable property to create. Defaults to f"{encoded_prop_name}_decoded"
-            mapping_dict (Dict[int, str], optional): Dictionary mapping encoded integers to strings. Defaults to self.core.vertex_categorical_mappings[encoded_prop_name]['int_to_str'] or self.core.edge_categorical_mappings[encoded_prop_name]['int_to_str'], depending on whether encoded_prop_type is 'v' or 'e'.
-            default_unmapped_label (str, optional): Default label for unmapped integers. Defaults to 'Unknown'.
+        Creates a new property by mapping encoded integer values to human-readable strings,
+        using NumPy vectorized operations to generate the labels.
         
-        Raises:
-            ValueError: If encoded_prop_type is not 'v' or 'e'.
-            KeyError: If the specified property does not exist in the graph.
-
-        Example usage:
-            onion.decode_property_labels(
-                encoded_prop_type='v', 
-                encoded_prop_name='layer_hash', 
-                new_prop_name='layer_name',
-                mapping_dict=onion.layer_code_to_name
-            )
+        Parameters:
+            encoded_prop_type (str): 'v' for vertex or 'e' for edge.
+            encoded_prop_name (str): Name of the existing encoded property.
+            new_prop_name (str, optional): Name of the new property. Defaults to f"{encoded_prop_name}_decoded".
+            mapping_dict (Dict[int, str], optional): Dictionary mapping integers to strings.
+                If not provided, defaults to self.core.vertex_categorical_mappings or
+                self.core.edge_categorical_mappings for the given property.
+            default_label (str): Label to use if an encoded value is not found in mapping_dict.
         """
         if encoded_prop_type not in ['v', 'e']:
             raise ValueError("encoded_prop_type must be 'v' for vertex or 'e' for edge.")
         
         if new_prop_name is None:
             new_prop_name = f"{encoded_prop_name}_decoded"
-
+        
         if mapping_dict is None:
-            if encoded_prop_type=='v':
+            if encoded_prop_type == 'v':
                 mapping_dict = self.core.vertex_categorical_mappings[encoded_prop_name]['int_to_str']
-            else: # must be encoded_prop_type=='e':
+            else:
                 mapping_dict = self.core.edge_categorical_mappings[encoded_prop_name]['int_to_str']
         
+        # Retrieve the encoded property based on dimension
         if encoded_prop_type == 'v':
             if encoded_prop_name not in self.core.graph.vp:
                 raise KeyError(f"Vertex property '{encoded_prop_name}' does not exist.")
             prop = self.core.graph.vp[encoded_prop_name]
-            items = list(self.core.graph.vertices())
         else:
-            if encoded_prop_name not in self.graph.ep:
+            if encoded_prop_name not in self.core.graph.ep:
                 raise KeyError(f"Edge property '{encoded_prop_name}' does not exist.")
             prop = self.core.graph.ep[encoded_prop_name]
-            items = list(self.graph.edges())
         
-        # Create a new string property to hold the human-readable labels
+        # Obtain the property as a NumPy array and cast to int
+        try:
+            encoded_array = prop.a.astype(int)
+        except Exception as e:
+            raise ValueError(f"Error converting property values to int: {e}")
+        
+        # Use np.vectorize to apply the mapping; specify otypes=[str] to force string outputs.
+        vectorized_map = np.vectorize(lambda x: mapping_dict.get(x, default_label), otypes=[str])
+        labels = vectorized_map(encoded_array)
+        
+        # Create a new property map for the human-readable labels
         human_readable_prop = self.core.graph.new_property(encoded_prop_type, 'string')
         
-        # Generate labels in one pass over the items
-        labels = [mapping_dict.get(int(prop[item]), default_unmapped_label) for item in items]
-        
-        # Assign the labels to the new property
+        # Assign the labels individually (since .a assignment doesn't work for string properties)
+        if encoded_prop_type == 'v':
+            items = list(self.core.graph.vertices())
+        else:
+            items = list(self.core.graph.edges())
+            
         for item, label in zip(items, labels):
             human_readable_prop[item] = label
         
-        # Add the new property to the appropriate property map
+        # Attach the new property to the graph
         if encoded_prop_type == 'v':
             self.core.graph.vp[new_prop_name] = human_readable_prop
         else:
