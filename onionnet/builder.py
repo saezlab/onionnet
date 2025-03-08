@@ -70,6 +70,10 @@ class OnionNetBuilder:
                                     property_cols: List[str] = None, drop_na: bool = True,
                                     fill_na_with: Any = None, string_override: bool = False, property_types: dict = None) -> None:
         df = df_nodes.copy()
+        # Enforce that id_col and layer_col are strings.
+        df[id_col] = df[id_col].astype(str)
+        df[layer_col] = df[layer_col].astype(str)
+    
         if drop_na:
             df = df.dropna(subset=[id_col, layer_col])
         else:
@@ -116,6 +120,12 @@ class OnionNetBuilder:
                                  target_id_col: str, target_layer_col: str, property_cols: List[str] = None,
                                  drop_na: bool = True, fill_na_with: Any = None, string_override: bool = False, property_types: dict = None) -> None:
         df = df_edges.copy()
+        # Enforce that id_col and layer_col are strings.
+        df[source_id_col] = df[source_id_col].astype(str)
+        df[source_layer_col] = df[source_layer_col].astype(str)
+        df[target_id_col] = df[target_id_col].astype(str)
+        df[target_layer_col] = df[target_layer_col].astype(str)
+
         if drop_na:
             df = df.dropna(subset=[source_id_col, source_layer_col, target_id_col, target_layer_col])
         else:

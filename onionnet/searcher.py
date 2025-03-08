@@ -206,18 +206,79 @@ class OnionNetSearcher:
         valid = {i for i, count in enumerate(hist) if count >= size_threshold}
         return GraphView(self.core.graph, vfilt=lambda v: comp[v] in valid)
 
-    def filter_view_by_property(self, prop_name: str, target_value: Any, comparison: str = "==") -> GraphView:
+    def filter_view_by_property(
+        self, 
+        prop_name: str, 
+        target_value: Any, 
+        comparison: str = "==",
+        dim: str = 'v',
+        prune_isolated: bool = False
+    ) -> GraphView:
+        """
+        Filters the graph based on a vertex or edge property and returns a GraphView.
+        
+        Parameters:
+            prop_name (str): Name of the property to filter by.
+            target_value (Any): A single value or a list/set of values to compare.
+            comparison (str): Comparison operator (only used if target_value is not a list/set).
+                                Options: "==", "!=", "<", ">", "<=", ">=".
+            dim (str): Dimension to filter on. Use 'v' for vertices (default) or 'e' for edges.
+            prune_isolated (bool): If True, further filter the view to keep only those vertices
+                                that have at least one incident edge in the filtered view.
+        
+        Returns:
+            GraphView: A filtered view of the graph.
+        
+        Raises:
+            ValueError: If the specified property doesn't exist or if an invalid dimension is provided.
+        """
         import operator
         ops = {"==": operator.eq, "!=": operator.ne, "<": operator.lt,
-               ">": operator.gt, "<=": operator.le, ">=": operator.ge}
-        if prop_name not in self.core.graph.vp:
-            raise ValueError(f"Property '{prop_name}' does not exist.")
-        if comparison not in ops:
-            raise ValueError(f"Invalid comparison operator '{comparison}'.")
-        cmp = ops[comparison]
-        if prop_name in self.core.vertex_categorical_mappings:
-            mapping = self.core.vertex_categorical_mappings[prop_name]['str_to_int']
-            if target_value not in mapping:
-                raise ValueError(f"Target value '{target_value}' not found in mapping.")
-            target_value = mapping[target_value]
-        return GraphView(self.core.graph, vfilt=lambda v: cmp(self.core.graph.vp[prop_name][v], target_value))
+            ">": operator.gt, "<=": operator.le, ">=": operator.ge}
+
+        if dim == 'v':
+            if prop_name not in self.core.graph.vp:
+                raise ValueError(f"Vertex property '{prop_name}' does not exist.")
+            prop = self.core.graph.vp[prop_name]
+            if isinstance(target_value, (list, tuple, set)):
+                filt_func = lambda v: prop[v] in target_value
+            else:
+                if comparison not in ops:
+                    raise ValueError(f"Invalid comparison operator '{comparison}'.")
+                cmp_op = ops[comparison]
+                filt_func = lambda v: cmp_op(prop[v], target_value)
+            gv = GraphView(self.core.graph, vfilt=filt_func)
+            if prune_isolated:
+                # Keep only vertices with at least one incident edge in the current view.
+                gv = GraphView(gv, vfilt=lambda v: (v.out_degree() + v.in_degree()) > 0)
+            return gv
+
+        elif dim == 'e':
+            if prop_name not in self.core.graph.ep:
+                raise ValueError(f"Edge property '{prop_name}' does not exist.")
+            prop = self.core.graph.ep[prop_name]
+            if isinstance(target_value, (list, tuple, set)):
+                filt_func = lambda e: prop[e] in target_value
+            else:
+                if comparison not in ops:
+                    raise ValueError(f"Invalid comparison operator '{comparison}'.")
+                cmp_op = ops[comparison]
+                filt_func = lambda e: cmp_op(prop[e], target_value)
+            gv = GraphView(self.core.graph, efilt=filt_func)
+            if prune_isolated:
+                # Instead of gv.degree(v), use the sum of out_degree and in_degree.
+                gv = GraphView(gv, vfilt=lambda v: (v.out_degree() + v.in_degree()) > 0)
+            return gv
+
+        else:
+            raise ValueError("Dimension must be 'v' (vertex) or 'e' (edge).")
+    
+    def print_filtered_vertex_info(self, gv: GraphView, layer_prop_name: str = 'layer_decoded', node_prop_name: str = 'node_id_decoded', return_list: bool = True) -> None:
+        v_info_list = []
+        for v in list(gv.vertices()):
+            layer = gv.vp[layer_prop_name][v]
+            node_str = gv.vp[node_prop_name][v]
+            v_info_list.append({'v_int':int(v), f'{layer_prop_name}':layer, f'{node_prop_name}':node_str})
+            print(f"Vertex {int(v)}: {layer_prop_name} = {layer}, {node_prop_name} = {node_str}")
+        if return_list:
+            return v_info_list
