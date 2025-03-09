@@ -33,6 +33,9 @@ class OnionNet:
     
     def compose_filters(self, *args, **kwargs) -> GraphView:
         return self.searcher.compose_filters(*args, **kwargs)
+    
+    def create_bipartite_gv(self, *args, **kwargs) -> GraphView:
+        return self.searcher.create_bipartite_gv(*args, **kwargs)
 
     # Property-related API
     def get_vertex_by_encoding_tuple(self, *args, **kwargs):

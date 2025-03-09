@@ -326,3 +326,45 @@ class OnionNetSearcher:
                 return GraphView(g, efilt=composite)
             else:
                 raise ValueError("must specify either 'v' or 'e' as type")
+            
+    def create_bipartite_gv(self, layer1: str, layer2: str, prop_name: str = 'layer_decoded') -> GraphView:
+        """
+        Create a bipartite GraphView that only retains vertices whose property `prop_name`
+        is either layer1 or layer2, and only keeps edges that connect vertices between the two layers.
+        
+        Parameters
+        ----------
+        layer1 : str
+            The first layer value (e.g. 'swisslipids').
+        layer2 : str
+            The second layer value (e.g. 'sl_chebi').
+        prop_name : str, optional
+            The name of the vertex property to filter on (default is 'layer_decoded').
+        
+        Returns
+        -------
+        GraphView
+            A filtered view of the graph containing only vertices in the given layers and only
+            edges connecting vertices from layer1 to layer2. Additionally, vertices with no
+            incident edges in the filtered view are removed.
+        """
+        g = self.core.graph
+
+        # Only keep vertices whose 'prop_name' is either layer1 or layer2.
+        initial_vfilt = lambda v: g.vp[prop_name][v] in {layer1, layer2}
+
+        # Only keep edges that connect a vertex in layer1 with one in layer2.
+        edge_filter = lambda e: (
+            (g.vp[prop_name][e.source()] == layer1 and g.vp[prop_name][e.target()] == layer2) or
+            (g.vp[prop_name][e.source()] == layer2 and g.vp[prop_name][e.target()] == layer1)
+        )
+
+        # Create a first GraphView applying the vertex and edge filters.
+        gv = GraphView(g, vfilt=initial_vfilt, efilt=edge_filter)
+
+        # Now define an additional vertex filter to keep only vertices that have at least one incident edge.
+        vfilt_connected = lambda v: (v.out_degree() + v.in_degree()) > 0
+
+        # Create a second, nested GraphView applying the additional vertex filter.
+        gv2 = GraphView(gv, vfilt=vfilt_connected)
+        return gv2

@@ -773,3 +773,129 @@ def color_edges(g, prop_name, method="categorical", generate_legend=False, custo
         raise ValueError("Unsupported color method. Choose from: categorical, continuous, boolean.")
 
     return {"e_color": e_color, "legend_edge_color": legend}
+
+
+def layout_by_layer(g, layer_prop_name='layer_decoded', spacing=50, epsilon=1e-2):
+    """
+    Create a 2D layout that places nodes in vertical columns based on their layer.
+    Vertices in each layer are spaced out by 'spacing' units. If a layer has only one
+    vertex, a small random offset (epsilon) is added to avoid a zero spread.
+    """
+    if layer_prop_name not in g.vp:
+        raise KeyError(f"Vertex property '{layer_prop_name}' not found.")
+
+    pos = g.new_vertex_property("vector<double>")
+    layer_dict = {}
+    for v in g.vertices():
+        layer_val = g.vp[layer_prop_name][v]
+        layer_dict.setdefault(layer_val, []).append(v)
+
+    # Assign each unique layer an x coordinate.
+    unique_layers = sorted(layer_dict.keys())
+    layer_to_x = {layer_val: i * spacing for i, layer_val in enumerate(unique_layers)}
+
+    for layer_val, vertices in layer_dict.items():
+        n = len(vertices)
+        if n == 1:
+            # For a single vertex, assign a default y coordinate with a slight random offset
+            y_positions = [spacing / 2 + np.random.uniform(-epsilon, epsilon)]
+        else:
+            # Evenly space vertices over [0, spacing], adding a small epsilon offset to each
+            y_positions = [i * spacing / (n - 1) + np.random.uniform(-epsilon, epsilon) for i in range(n)]
+        for v, y in zip(vertices, y_positions):
+            pos[v] = [layer_to_x[layer_val], y]
+
+    # Check the overall bounding box of pos
+    xs = [pos[v][0] for v in g.vertices()]
+    ys = [pos[v][1] for v in g.vertices()]
+    width = max(xs) - min(xs)
+    height = max(ys) - min(ys)
+    if width < epsilon or height < epsilon:
+        raise ValueError("Layout bounding box is degenerate. Increase spacing or epsilon.")
+    return pos
+
+
+def bipartite_ordered_layout(
+    g,
+    layer_prop='layer_decoded',
+    left_val='swisslipids',
+    right_val='sl_chebi',
+    sort_left_by=lambda v: int(v),
+    vertical_spacing=30.0,
+    horizontal_spacing=1.0,
+):
+    """
+    Arrange a bipartite graph so edges are as horizontal as possible:
+      1) Identify the left set (layer == left_val) and the right set (layer == right_val).
+      2) Sort the left set by a given key function (default: vertex id).
+      3) Sort each node on the right by the average index of its neighbors on the left.
+      4) Assign x=0 for the left side, x=horizontal_spacing for the right side.
+         Multiply the y-index by vertical_spacing for each side.
+
+    Parameters
+    ----------
+    g : graph_tool.Graph or GraphView
+        The bipartite graph.
+    layer_prop : str, optional
+        Vertex property name that stores the layer. Default: 'layer_decoded'.
+    left_val : str, optional
+        The property value used for the left side. Default: 'swisslipids'.
+    right_val : str, optional
+        The property value used for the right side. Default: 'sl_chebi'.
+    sort_left_by : callable, optional
+        A function used to sort the left side's vertices. Default: sorts by vertex ID.
+    vertical_spacing : float, optional
+        Multiplier for vertical distances. A larger value spreads nodes further vertically.
+        Default is 30.0.
+    horizontal_spacing : float, optional
+        The x distance between the left and right columns. Default is 1.0.
+
+    Returns
+    -------
+    pos : VertexPropertyMap
+        A 2D coordinate property map for graph-tool, with x=0 or x=horizontal_spacing for each side
+        and y determined by the sorted index times vertical_spacing.
+    """
+
+    # Separate nodes into left and right sets
+    left_nodes = []
+    right_nodes = []
+    for v in g.vertices():
+        val = g.vp[layer_prop][v]
+        if val == left_val:
+            left_nodes.append(v)
+        elif val == right_val:
+            right_nodes.append(v)
+
+    # Sort the left side by the provided key
+    left_nodes.sort(key=sort_left_by)
+    # Assign an integer index to each node on the left
+    left_index = {v: i for i, v in enumerate(left_nodes)}
+
+    # For each node on the right, compute the average index of its neighbors on the left
+    def avg_left_index(v):
+        indices = []
+        for w in v.all_neighbors():
+            if w in left_index:
+                indices.append(left_index[w])
+        if indices:
+            return sum(indices) / len(indices)
+        else:
+            return 0
+
+    # Sort the right side by the average neighbor index on the left
+    right_nodes.sort(key=avg_left_index)
+    # Assign an integer index to each node on the right
+    right_index = {v: i for i, v in enumerate(right_nodes)}
+
+    # Create a coordinate property map
+    pos = g.new_vertex_property("vector<double>")
+
+    # For left side, x=0; for right side, x=horizontal_spacing
+    # Multiply the index by vertical_spacing for the y-coordinate
+    for v in left_nodes:
+        pos[v] = [0.0, left_index[v] * vertical_spacing]
+    for v in right_nodes:
+        pos[v] = [horizontal_spacing, right_index[v] * vertical_spacing]
+
+    return pos
