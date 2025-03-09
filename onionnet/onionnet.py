@@ -31,8 +31,8 @@ class OnionNet:
     def filter_view_by_property(self, *args, **kwargs) -> GraphView:
         return self.searcher.filter_view_by_property(*args, **kwargs)
     
-    def compose_vertex_filters(self, *args, **kwargs) -> GraphView:
-        return self.searcher.compose_vertex_filters(*args, **kwargs)
+    def compose_filters(self, *args, **kwargs) -> GraphView:
+        return self.searcher.compose_filters(*args, **kwargs)
 
     # Property-related API
     def get_vertex_by_encoding_tuple(self, *args, **kwargs):
