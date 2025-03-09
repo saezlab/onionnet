@@ -11,7 +11,7 @@ class OnionNetSearcher:
     def __init__(self, core: OnionNetGraph):
         self.core = core
 
-    def compute_on_shortest(self, source_idx: int, target_indices: List[int], inplace: bool = False):
+    def compute_on_shortest(self, source_idx: int, target_indices: List[int], inplace: bool = False, g: Graph = None, return_gv = False):
         """
         Computes and returns a Boolean vertex property 'on_shortest'
         for vertices that lie on some shortest path from the vertex at source_idx
@@ -23,10 +23,11 @@ class OnionNetSearcher:
         If inplace is True, the original graph is modified during computation, but the modifications,
         including any additional vertices and edges, are removed at the end of the function.
         """
+        g = g or self.core.graph
         if not inplace:
-            g_temp = self.core.graph.copy()
+            g_temp = g.copy()
         else:
-            g_temp = self.core.graph
+            g_temp = g
 
         try:
             source = g_temp.vertex(source_idx)
@@ -64,7 +65,7 @@ class OnionNetSearcher:
         target_dists = { forward_dist[t] for t in targets }
         on_shortest_temp = g_temp.new_vertex_property("bool")
         # Determine the number of original vertices (before adding the artificial vertex).
-        num_orig = self.core.graph.num_vertices() if not inplace else g_temp.num_vertices() - 1
+        num_orig = g.num_vertices() if not inplace else g_temp.num_vertices() - 1
         for v in g_temp.vertices():
             # Skip the artificial vertex if operating inplace
             if inplace and int(v) >= num_orig:
@@ -81,10 +82,13 @@ class OnionNetSearcher:
             result_prop = on_shortest_temp
         else:
             # Map the computed values from the copy back to the original graph.
-            result_prop = self.core.graph.new_vertex_property("bool")
-            for v in self.core.graph.vertices():
+            result_prop = g.new_vertex_property("bool")
+            for v in g.vertices():
                 result_prop[v] = on_shortest_temp[v]
-        return result_prop
+        if return_gv:
+            GraphView(g, vfilt=result_prop)
+        else:
+            return result_prop
 
     def _bfs_traversal(self, seed_vertices, vfilt, efilt, mode='downstream'):
         """Perform a simple BFS to update vertex and edge filters."""
@@ -120,9 +124,10 @@ class OnionNetSearcher:
         show_plot: bool = True,
         include_upstream_children: bool = False,
         verbosity: bool = False,
+        g: Graph = None,  # Optionally use a graph or graphview instead, default is to use core
         **kwargs
     ) -> GraphView:
-        g = self.core.graph
+        g = g or self.core.graph
 
         def get_label(v):
             return g.vp[node_text_prop][v] if node_text_prop in g.vp else str(int(v))
@@ -135,12 +140,13 @@ class OnionNetSearcher:
         upstream_nodes = set()
         downstream_nodes = set()
         if direction in ('upstream', 'bi'):
+            # For upstream, reverse the view only if needed.
             g_rev = GraphView(g, reversed=True)
             distances_up = shortest_distance(g_rev, source=start_vertex, max_dist=max_dist)
             upstream_nodes = {v for v in g.vertices() if distances_up[v] <= max_dist}
             if verbosity:
                 print("Upstream nodes:",
-                      [f"{int(v)} ({get_label(v)})" for v in upstream_nodes])
+                    [f"{int(v)} ({get_label(v)})" for v in upstream_nodes])
             if include_upstream_children and direction == 'bi':
                 children = set()
                 for v in upstream_nodes:
@@ -151,7 +157,7 @@ class OnionNetSearcher:
             downstream_nodes = {v for v in g.vertices() if distances_down[v] <= max_dist}
             if verbosity:
                 print("Downstream nodes:",
-                      [f"{int(v)} ({get_label(v)})" for v in downstream_nodes])
+                    [f"{int(v)} ({get_label(v)})" for v in downstream_nodes])
         if direction == 'bi':
             final = upstream_nodes.union(downstream_nodes)
         elif direction == 'upstream':
@@ -160,7 +166,7 @@ class OnionNetSearcher:
             final = downstream_nodes
         else:
             raise ValueError("Invalid direction; choose 'upstream', 'downstream', or 'bi'.")
-        
+
         final_indices = {int(v) for v in final}
         result = GraphView(g, vfilt=lambda v: int(v) in final_indices)
         print(f"Filtered graph contains {result.num_vertices()} vertices and {result.num_edges()} edges.")
@@ -273,12 +279,50 @@ class OnionNetSearcher:
         else:
             raise ValueError("Dimension must be 'v' (vertex) or 'e' (edge).")
     
-    def print_filtered_vertex_info(self, gv: GraphView, layer_prop_name: str = 'layer_decoded', node_prop_name: str = 'node_id_decoded', return_list: bool = True) -> None:
-        v_info_list = []
-        for v in list(gv.vertices()):
-            layer = gv.vp[layer_prop_name][v]
-            node_str = gv.vp[node_prop_name][v]
-            v_info_list.append({'v_int':int(v), f'{layer_prop_name}':layer, f'{node_prop_name}':node_str})
-            print(f"Vertex {int(v)}: {layer_prop_name} = {layer}, {node_prop_name} = {node_str}")
-        if return_list:
-            return v_info_list
+    def compose_filters(self, filter_funcs, mode="and", type='v', return_prop: bool = False, g: Graph = None):
+        """
+        Create a composite filter based on a list of filter functions.
+        
+        Parameters:
+            filter_funcs (list): List of functions; each takes a vertex (or edge) and returns True 
+                                if it should be kept.
+            mode (str): "and" (default) requires all functions to return True,
+                        "or" requires at least one to return True.
+            type (str): 'v' for vertices, 'e' for edges.
+            return_prop (bool): If True, return a new Boolean property map instead of a GraphView.
+            g (Graph): The graph to operate on; defaults to self.core.graph.
+                                    
+        Returns:
+            Either a GraphView or a PropertyMap (vertex or edge) of booleans.
+        """
+        g = g or self.core.graph
+
+        def composite(item):
+            if mode == "and":
+                return all(f(item) for f in filter_funcs)
+            elif mode == "or":
+                return any(f(item) for f in filter_funcs)
+            else:
+                raise ValueError("mode must be 'and' or 'or'")
+
+        if return_prop:
+            if type == 'v':
+                new_prop = g.new_vertex_property("bool")
+                for v in g.vertices():
+                    new_prop[v] = composite(v)
+                return new_prop
+            elif type == 'e':
+                new_prop = g.new_edge_property("bool")
+                for e in g.edges():
+                    new_prop[e] = composite(e)
+                return new_prop
+            else:
+                raise ValueError("must specify either 'v' or 'e' as type")
+        else:
+            # Return a GraphView using the composite filter.
+            if type == 'v':
+                return GraphView(g, vfilt=composite)
+            elif type == 'e':
+                return GraphView(g, efilt=composite)
+            else:
+                raise ValueError("must specify either 'v' or 'e' as type")
