@@ -11,6 +11,11 @@ import numpy as np
 import matplotlib.cm as cm  # To use color maps
 from matplotlib.patches import Patch
 
+# For layout compute or load function
+import os
+import pandas as pd
+from graph_tool.all import sfdp_layout
+
 
 def flatten_properties(nested_properties: List[Any]) -> List[str]:
     """
@@ -898,4 +903,114 @@ def bipartite_ordered_layout(
     for v in right_nodes:
         pos[v] = [horizontal_spacing, right_index[v] * vertical_spacing]
 
+    return pos
+
+
+def load_or_compute_layout(g, filename, override=False, inject=None):
+    """
+    Loads vertex layout coordinates from a TSV file if it exists (and override is False), 
+    or computes/injects them and saves them to the file.
+
+    The TSV file is expected to have the following key columns:
+      - Either: layer_hash and node_id_hash (primary keys)
+      - Or: v_int (if layer and node hash are not available)
+      - Additionally, x and y for coordinates.
+
+    Parameters
+    ----------
+    g : graph_tool.Graph
+        The graph for which the layout is needed.
+    filename : str
+        The path to the TSV file where layout coordinates are stored or should be saved.
+    override : bool, optional
+        If True, recompute/inject the layout even if the file already exists and update the file. Default is False.
+    inject : None, callable, or a precomputed layout, optional
+        If provided, use this layout instead of computing via sfdp_layout. If callable, it should accept the graph `g`
+        and return a layout (vertex property map). Otherwise, it should be a layout that maps vertices to [x, y] coordinates.
+
+    Returns
+    -------
+    pos : graph_tool.VertexPropertyMap
+        A vertex property map containing the 2D coordinates for each vertex.
+    """
+    # Determine the key type based on graph properties
+    if "layer_hash" in g.vp and "node_id_hash" in g.vp:
+        key_type = "hash"
+    elif "v_int" in g.vp:
+        key_type = "v_int"
+    else:
+        raise ValueError("Graph does not have the required key properties ('layer_hash' and 'node_id_hash', or 'v_int').")
+    
+    # Use the injected layout if provided
+    if inject is not None:
+        pos = inject(g) if callable(inject) else inject
+        
+        data = []
+        for v in g.vertices():
+            row = {}
+            if key_type == "hash":
+                row["layer_hash"] = g.vp["layer_hash"][v]
+                row["node_id_hash"] = g.vp["node_id_hash"][v]
+            else:
+                row["v_int"] = int(g.vp["v_int"][v])
+            x, y = pos[v]
+            row["x"] = x
+            row["y"] = y
+            data.append(row)
+        df = pd.DataFrame(data)
+        df.to_csv(filename, sep="\t", index=False)
+        print(f"Injected layout saved for {len(data)} vertices to {filename}")
+    
+    # If no injection is provided, try to load from file if it exists and override is False.
+    elif os.path.exists(filename) and not override:
+        df = pd.read_csv(filename, delimiter="\t")
+        pos = g.new_vertex_property("vector<double>")
+        # Determine key type based on file columns
+        if "layer_hash" in df.columns and "node_id_hash" in df.columns:
+            file_key = "hash"
+        elif "v_int" in df.columns:
+            file_key = "v_int"
+        else:
+            raise ValueError("TSV file does not have the required key columns.")
+        
+        for v in g.vertices():
+            if file_key == "hash":
+                lh = g.vp["layer_hash"][v]
+                nid = g.vp["node_id_hash"][v]
+                row = df[(df["layer_hash"] == lh) & (df["node_id_hash"] == nid)]
+                if row.empty:
+                    raise ValueError(f"No saved layout information found for vertex with layer_hash {lh} and node_id_hash {nid}.")
+            else:
+                v_int = int(g.vp["v_int"][v])
+                row = df[df["v_int"] == v_int]
+                if row.empty:
+                    raise ValueError(f"No saved layout information found for vertex with v_int {v_int}.")
+            x = float(row.iloc[0]["x"])
+            y = float(row.iloc[0]["y"])
+            pos[v] = [x, y]
+        print(f"Loaded layout for {len(df)} vertices from {filename}")
+    
+    # Otherwise, compute the layout using sfdp_layout.
+    else:
+        pos = sfdp_layout(g)
+        
+        data = []
+        for v in g.vertices():
+            row = {}
+            if key_type == "hash":
+                row["layer_hash"] = g.vp["layer_hash"][v]
+                row["node_id_hash"] = g.vp["node_id_hash"][v]
+            else:
+                row["v_int"] = int(g.vp["v_int"][v])
+            x, y = pos[v]
+            row["x"] = x
+            row["y"] = y
+            data.append(row)
+        df = pd.DataFrame(data)
+        df.to_csv(filename, sep="\t", index=False)
+        if override:
+            print(f"Override enabled: Computed and saved new layout for {len(data)} vertices to {filename}")
+        else:
+            print(f"Computed and saved layout for {len(data)} vertices to {filename}")
+    
     return pos
