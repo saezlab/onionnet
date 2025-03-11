@@ -1014,3 +1014,61 @@ def load_or_compute_layout(g, filename, override=False, inject=None):
             print(f"Computed and saved layout for {len(data)} vertices to {filename}")
     
     return pos
+
+def prop_to_size(g, prop, mi=1, ma=8, power=1, transform_func=None, mode='v'):
+    """
+    Scales a property to a specified size range with an optional power transformation and custom vectorized transformation.
+    
+    Parameters:
+    -----------
+    g : graph_tool.Graph
+        The graph object.
+    prop : array-like or PropertyMap
+        The property values to scale. Can be a list, numpy array, or a graph-tool property map (g.vp or g.ep).
+    mi : float
+        Minimum size.
+    ma : float
+        Maximum size.
+    power : float
+        Power to apply for scaling.
+    transform_func : callable, optional
+        A function to apply to the property values before scaling. This function should support vectorized operations.
+        If it doesn’t, np.vectorize will be used as a fallback.
+    mode : str, optional
+        Specifies whether the property is a vertex property ('v') or an edge property ('e'). Defaults to 'v'.
+    
+    Returns:
+    --------
+    size_prop : graph_tool.PropertyMap
+        A property map with the scaled sizes, either a vertex or edge property map based on mode.
+    """
+    try:
+        arr = np.array(prop, dtype=float)
+    except Exception:
+        arr = np.array(list(prop), dtype=float)
+        
+    if transform_func is not None:
+        try:
+            values = np.array(transform_func(arr), dtype=float)
+        except Exception:
+            values = np.vectorize(transform_func)(arr)
+    else:
+        values = arr
+
+    min_val = np.min(values)
+    max_val = np.max(values)
+    if min_val == max_val:
+        sizes = np.full(values.shape, mi)
+    else:
+        if power != 1:
+            values = values ** power
+        sizes = np.interp(values, [min_val, max_val], [mi, ma])
+    
+    if mode == 'v':
+        size_prop = g.new_vertex_property("float", vals=sizes.tolist())
+    elif mode == 'e':
+        size_prop = g.new_edge_property("float", vals=sizes.tolist())
+    else:
+        raise ValueError("Mode must be either 'v' for vertex or 'e' for edge property.")
+        
+    return size_prop
