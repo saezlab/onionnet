@@ -675,31 +675,111 @@ def set_node_sizes_and_text_by_depth(g, root, max_size=20, min_size=5, max_text_
     return v_size, v_text_size
 
 
-def get_legend(gv, prop, ordered_cats=None, verbose=False):
+def get_legend(source, prop=None, ordered_cats=None, verbose=False, mode=None, custom_cmap=None, title: str=None):
     """
-    This function will create a legend with colours corresponding to those used in the plot.
-    Property should correspond to the property category used for colouring the graph.
-    The order of the items in the legend will be determined by the category order provided, if any.
+    Generates a legend for a graph coloring.
+    
+    Parameters:
+    -----------
+    source: Either a graph (with vertex or edge properties) or a legend dictionary mapping categories to colors.
+    prop: If source is a graph, the property name to extract values from (vertex or edge property).
+    ordered_cats: Optional list specifying the order of categories in the legend (for categorical legends).
+    verbose: If True, prints debug information.
+    mode: Optional, 'categorical' or 'continuous'. If None, the function will infer the mode from the property type.
+    custom_cmap: A custom matplotlib colormap to use for continuous legends. Defaults to viridis if not provided.
+    
+    Behavior:
+    -----------    
+    - If source is a dictionary:
+      * If it contains keys 'min_col' and 'max_col', it is treated as a continuous legend dictionary and a colorbar is displayed.\n
+      * Otherwise, it is treated as a categorical mapping from categories to colors.
+    - If source is a graph object, the function extracts the property values from source.vp[prop] or source.ep[prop].\n
+      If the property values are numeric (or mode is set to 'continuous'), a continuous colorbar is displayed.\n
+      Otherwise, a categorical legend is constructed using a default colormap (tab10).
     """
-    categories = set(gv.vp[prop])
-    # Use a predefined color map (e.g., tab10) for distinct color assignment to each category
-    color_map = {cat: cm.tab10(i % 10) for i, cat in enumerate(categories)} # this should reflect the internal colour property function in lipinet
-    if verbose==True:
-        print(color_map)
-
-    # Create legend elements in the specified order
-    if ordered_cats != None:
-        ordered_categories = ordered_cats # e.g. ['Category', 'Class', 'Species', 'Molecular subspecies', 'Structural subspecies', 'Isomeric subspecies']
-        legend_elements = [Patch(facecolor=color_map[cat][:3], label=cat) for cat in ordered_categories]
+    import matplotlib.cm as cm
+    from matplotlib.patches import Patch
+    
+    # Case 1: source is a dictionary
+    if isinstance(source, dict):
+        if 'min_col' in source and 'max_col' in source:
+            # Continuous legend dictionary provided\n
+            min_val = source.get('min_val')
+            max_val = source.get('max_val')
+            if min_val is None or max_val is None:
+                raise ValueError("Continuous legend dictionary must contain 'min_val' and 'max_val'.")
+            cmap = custom_cmap if custom_cmap is not None else cm.viridis
+            norm = plt.Normalize(vmin=min_val, vmax=max_val)
+            sm = cm.ScalarMappable(norm=norm, cmap=cmap)
+            sm.set_array([])
+            plt.figure(figsize=(6, 1))
+            cbar = plt.colorbar(sm, orientation='horizontal')
+            cbar.set_label(prop.capitalize() if prop else "Value")
+            plt.show()
+            return
+        else:
+            # Categorical legend dictionary provided\n
+            legend_dict = source
+            mode = 'categorical'
     else:
-        legend_elements = [Patch(facecolor=color[:3], label=category)  # Use RGB only
-                            for category, color in color_map.items()]
-
-    # Plot the legend
+        # Case 2: source is assumed to be a graph object\n
+        if prop is None:
+            raise ValueError("When source is a graph, 'prop' must be provided.")
+        # Determine mode if not explicitly provided\n
+        if mode is None:
+            if hasattr(source, "vp") and prop in source.vp:
+                sample = next(iter(source.vp[prop]))
+            elif hasattr(source, "ep") and prop in source.ep:
+                sample = next(iter(source.ep[prop]))
+            else:
+                raise ValueError("Provided graph does not have the specified property.")
+            mode = 'continuous' if isinstance(sample, (int, float)) else 'categorical'
+        if mode == 'continuous':
+            # Extract numeric values from the property\n
+            if hasattr(source, "vp") and prop in source.vp:
+                values = [float(x) for x in source.vp[prop]]
+            elif hasattr(source, "ep") and prop in source.ep:
+                values = [float(x) for x in source.ep[prop]]
+            else:
+                raise ValueError("Provided graph does not have the specified property.")
+            min_val, max_val = min(values), max(values)
+            cmap = custom_cmap if custom_cmap is not None else cm.viridis
+            norm = plt.Normalize(vmin=min_val, vmax=max_val)
+            sm = cm.ScalarMappable(norm=norm, cmap=cmap)
+            sm.set_array([])
+            plt.figure(figsize=(6, 1))
+            cbar = plt.colorbar(sm, orientation='horizontal')
+            cbar.set_label(prop.capitalize() if prop else "Value")
+            plt.show()
+            return
+        elif mode == 'categorical':
+            if hasattr(source, "vp") and prop in source.vp:
+                categories = set(source.vp[prop])
+            elif hasattr(source, "ep") and prop in source.ep:
+                categories = set(source.ep[prop])
+            else:
+                raise ValueError("Provided graph does not have the specified property.")
+            # Use default colormap (tab10) for distinct color assignment\n
+            legend_dict = {cat: cm.tab10(i % 10) for i, cat in enumerate(categories)}
+            if verbose:
+                print("Default legend dictionary:", legend_dict)
+        else:
+            raise ValueError("Mode must be either 'continuous' or 'categorical'.")
+    
+    # Categorical legend: create legend elements using patches\n
+    if ordered_cats is not None:
+        legend_elements = [Patch(facecolor=legend_dict[cat][:3] if isinstance(legend_dict[cat], (tuple, list)) else legend_dict[cat], label=cat)
+                           for cat in ordered_cats if cat in legend_dict]
+    else:
+        legend_elements = [Patch(facecolor=(color[:3] if isinstance(color, (tuple, list)) else color), label=category)
+                           for category, color in legend_dict.items()]
+    
     plt.figure(figsize=(5, 3))
-    plt.legend(handles=legend_elements, title=prop.capitalize(), loc="center", frameon=False)
-    plt.axis("off")  # Hide axes for a clean legend display
+    plot_title = title if title is not None else (prop.capitalize() if prop is not None else "Legend")
+    plt.legend(handles=legend_elements, title=plot_title, loc="center", frameon=False)
+    plt.axis("off")
     plt.show()
+
     
 def color_edges(g, prop_name, method="categorical", generate_legend=False, custom_colormap=None, custom_color_dict=None, zero_centred=False):
     """
@@ -822,9 +902,9 @@ def layout_by_layer(g, layer_prop_name='layer_decoded', spacing=50, epsilon=1e-2
 
 def bipartite_ordered_layout(
     g,
+    left_val,
+    right_val,
     layer_prop='layer_decoded',
-    left_val='swisslipids',
-    right_val='sl_chebi',
     sort_left_by=lambda v: int(v),
     vertical_spacing=30.0,
     horizontal_spacing=1.0,
@@ -841,12 +921,12 @@ def bipartite_ordered_layout(
     ----------
     g : graph_tool.Graph or GraphView
         The bipartite graph.
+    left_val : str
+        The property value used for the left side. E.g. 'layer_1'
+    right_val : str
+        The property value used for the right side. E.g. 'layer_2'
     layer_prop : str, optional
         Vertex property name that stores the layer. Default: 'layer_decoded'.
-    left_val : str, optional
-        The property value used for the left side. Default: 'swisslipids'.
-    right_val : str, optional
-        The property value used for the right side. Default: 'sl_chebi'.
     sort_left_by : callable, optional
         A function used to sort the left side's vertices. Default: sorts by vertex ID.
     vertical_spacing : float, optional
