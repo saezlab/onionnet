@@ -2,15 +2,15 @@ from setuptools import setup, find_packages
 
 setup(
     name="onionnet",
-    version="0.1.0",
-    description="A package for creating and exploring large layered networks (ie. onions) using graph-tool.",
+    version="1.0.0",
+    description="A package for creating and analysing large mulilayered networks using graph-tool.",
     author="Macabe Daley",
-    author_email="your.email@example.com",
+    author_email="***",
     packages=find_packages(),
     install_requires=[
         "numpy",
         "pandas",
-        #"graph-tool",  # Ensure users know this is a dependency; note that graph-tool may need special installation instructions.
+        #"graph-tool",  # Note graph-tool is not pip installable, so you should install it via conda before running OnionNet.
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
