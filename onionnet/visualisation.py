@@ -16,6 +16,16 @@ import os
 import pandas as pd
 from graph_tool.all import sfdp_layout
 
+"""
+This module provides visualization utilities for the OnionNet project. It includes functions for generating graph layouts, 
+assigning colors and shapes to nodes and edges based on their properties, drawing weight propagation graphs, and creating legends. 
+These tools enable effective visual analysis and presentation of complex network data within an OnionNetGraph.
+"""
+
+#########################################
+# Visualisation: Graph Layout and Styling
+#########################################
+
 
 def flatten_properties(nested_properties: List[Any]) -> List[str]:
     """
@@ -675,7 +685,7 @@ def set_node_sizes_and_text_by_depth(g, root, max_size=20, min_size=5, max_text_
     return v_size, v_text_size
 
 
-def get_legend(source, prop=None, ordered_cats=None, verbose=False, mode=None, custom_cmap=None, title: str=None):
+def get_legend(source, prop=None, ordered_cats=None, verbose=False, mode=None, custom_cmap=None, title: str=None, save_filename: str=None):
     """
     Generates a legend for a graph coloring.
     
@@ -778,6 +788,9 @@ def get_legend(source, prop=None, ordered_cats=None, verbose=False, mode=None, c
     plot_title = title if title is not None else (prop.capitalize() if prop is not None else "Legend")
     plt.legend(handles=legend_elements, title=plot_title, loc="center", frameon=False)
     plt.axis("off")
+    # Save the figure as an SVG file
+    if save_filename != None:
+        plt.savefig(f"{save_filename}.svg", format="svg")
     plt.show()
 
     

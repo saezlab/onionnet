@@ -4,6 +4,11 @@ import numpy as np
 from typing import List, Any
 from .utils import infer_property_type, map_categorical_property
 
+"""
+This module provides the OnionNetBuilder class, which is responsible for ingesting node and edge DataFrames into an OnionNetGraph.
+It handles data validation, duplicate removal, and mapping of properties for vertices and edges.
+"""
+
 try:
     from IPython.display import display
     IPYTHON_AVAILABLE = True
@@ -14,7 +19,19 @@ except ImportError:
 # Builder: Ingesting DataFrames into the Graph
 #########################################
 class OnionNetBuilder:
+    """
+    Builder class for ingesting DataFrames into an OnionNetGraph.
+    
+    Attributes:
+        core (OnionNetGraph): The core graph object where nodes and edges will be added.
+    """
     def __init__(self, core: OnionNetGraph):
+        """
+        Initialize the OnionNetBuilder with a core OnionNetGraph instance.
+        
+        Parameters:
+            core (OnionNetGraph): The core graph object used for adding vertices and edges.
+        """
         self.core = core
 
     def grow_onion(
@@ -35,6 +52,32 @@ class OnionNetBuilder:
         vertex_property_types: dict = None,
         edge_property_types: dict = None
     ) -> None:
+        """
+        Ingest node and edge DataFrames into the graph.
+        
+        This method validates the input DataFrames, removes duplicates, and optionally displays
+        a snippet of the data. It then calls internal methods to add vertices and edges to the graph.
+        
+        Parameters:
+            df_nodes (pd.DataFrame): DataFrame containing node information.
+            df_edges (pd.DataFrame): DataFrame containing edge information.
+            node_prop_cols (List[str], optional): List of node property column names. Defaults to ['node_prop_1', 'node_prop_2'].
+            edge_prop_cols (List[str], optional): List of edge property column names. Defaults to ['edge_prop_1', 'edge_prop_2'].
+            drop_na (bool, optional): Flag to drop rows with missing key values. Defaults to True.
+            drop_duplicates (bool, optional): Flag to remove duplicate entries. Defaults to True.
+            use_display (bool, optional): Flag to display a snippet of data using IPython display if available. Defaults to False.
+            node_id_col (str, optional): Column name for node identifier. Defaults to 'node_id'.
+            node_layer_col (str, optional): Column name for node layer information. Defaults to 'layer'.
+            edge_source_id_col (str, optional): Column name for edge source identifier. Defaults to 'source_id'.
+            edge_source_layer_col (str, optional): Column name for edge source layer information. Defaults to 'source_layer'.
+            edge_target_id_col (str, optional): Column name for edge target identifier. Defaults to 'target_id'.
+            edge_target_layer_col (str, optional): Column name for edge target layer information. Defaults to 'target_layer'.
+            vertex_property_types (dict, optional): Mapping of vertex property types. Defaults to None.
+            edge_property_types (dict, optional): Mapping of edge property types. Defaults to None.
+        
+        Raises:
+            ValueError: If required columns are missing in the node or edge DataFrames.
+        """
         # Use default property columns if none specified.
         node_prop_cols = node_prop_cols or ['node_prop_1', 'node_prop_2']
         edge_prop_cols = edge_prop_cols or ['edge_prop_1', 'edge_prop_2']
@@ -53,7 +96,7 @@ class OnionNetBuilder:
             df_edges = df_edges.drop_duplicates(
                 subset=[edge_source_id_col, edge_source_layer_col, edge_target_id_col, edge_target_layer_col])
         
-        # Display snippet and shape.
+        # Optionally display a snippet of the data.
         for df, name in zip([df_nodes, df_edges], ['Nodes', 'Edges']):
             if use_display and IPYTHON_AVAILABLE:
                 display(df.head())
@@ -61,7 +104,7 @@ class OnionNetBuilder:
             else:
                 pass
             
-        
+        # Add vertices and edges to the graph.
         self.add_vertices_from_dataframe(df_nodes, node_id_col, node_layer_col, node_prop_cols, drop_na, property_types=vertex_property_types)
         self.add_edges_from_dataframe(df_edges, edge_source_id_col, edge_source_layer_col,
                                       edge_target_id_col, edge_target_layer_col, edge_prop_cols, drop_na, property_types=edge_property_types)
@@ -69,6 +112,22 @@ class OnionNetBuilder:
     def add_vertices_from_dataframe(self, df_nodes: pd.DataFrame, id_col: str, layer_col: str,
                                     property_cols: List[str] = None, drop_na: bool = True,
                                     fill_na_with: Any = None, string_override: bool = False, property_types: dict = None) -> None:
+        """
+        Add vertices to the graph from a DataFrame containing node information.
+        
+        This method processes the DataFrame to ensure correct data types, handles missing values,
+        maps node layers and IDs, and assigns both core and additional properties to the vertices.
+        
+        Parameters:
+            df_nodes (pd.DataFrame): DataFrame containing node data.
+            id_col (str): Name of the column containing node identifiers.
+            layer_col (str): Name of the column containing node layer information.
+            property_cols (List[str], optional): List of additional node property columns to be added. Defaults to None.
+            drop_na (bool, optional): Flag to drop rows with missing id or layer values. Defaults to True.
+            fill_na_with (Any, optional): Value to fill in for missing values if drop_na is False. Defaults to None.
+            string_override (bool, optional): Flag to force treating property values as strings. Defaults to False.
+            property_types (dict, optional): Mapping of node property types. Defaults to None.
+        """
         df = df_nodes.copy()
         # Enforce that id_col and layer_col are strings.
         df[id_col] = df[id_col].astype(str)
@@ -119,6 +178,24 @@ class OnionNetBuilder:
     def add_edges_from_dataframe(self, df_edges: pd.DataFrame, source_id_col: str, source_layer_col: str,
                                  target_id_col: str, target_layer_col: str, property_cols: List[str] = None,
                                  drop_na: bool = True, fill_na_with: Any = None, string_override: bool = False, property_types: dict = None) -> None:
+        """
+        Add edges to the graph from a DataFrame containing edge information.
+        
+        This method processes the DataFrame to ensure correct data types, handles missing values,
+        maps source and target node identifiers, and assigns properties to the edges.
+        
+        Parameters:
+            df_edges (pd.DataFrame): DataFrame containing edge data.
+            source_id_col (str): Name of the column for the source node identifier.
+            source_layer_col (str): Name of the column for the source node layer.
+            target_id_col (str): Name of the column for the target node identifier.
+            target_layer_col (str): Name of the column for the target node layer.
+            property_cols (List[str], optional): List of additional edge property columns to be added. Defaults to None.
+            drop_na (bool, optional): Flag to drop rows with missing values in key columns. Defaults to True.
+            fill_na_with (Any, optional): Value to fill in for missing values if drop_na is False. Defaults to None.
+            string_override (bool, optional): Flag to force treating property values as strings. Defaults to False.
+            property_types (dict, optional): Mapping of edge property types. Defaults to None.
+        """
         df = df_edges.copy()
         # Enforce that id_col and layer_col are strings.
         df[source_id_col] = df[source_id_col].astype(str)
