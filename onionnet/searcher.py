@@ -4,24 +4,50 @@ from graph_tool.topology import label_components
 from collections import deque
 from typing import List, Any, Union
 
+"""
+This module defines the OnionNetSearcher class, which provides functionality for graph traversal and subgraph extraction 
+within an OnionNetGraph. It includes methods for computing shortest path related properties, performing breadth-first search 
+traversals, and generating filtered graph views based on various criteria.
+"""
+
 #########################################
 # Searcher: Graph Traversal & Subgraph Extraction
 #########################################
 class OnionNetSearcher:
     def __init__(self, core: OnionNetGraph):
+        """
+        Initialize the OnionNetSearcher with a core OnionNetGraph instance.
+        
+        Parameters:
+            core (OnionNetGraph): The core graph object that will be used for searching and traversal operations.
+        """
         self.core = core
 
-    def compute_on_shortest(self, source_idx: int, target_indices: List[int], inplace: bool = False, g: Graph = None, return_gv = False):
+    def compute_on_shortest(self, source_idx: int, target_indices: List[int], inplace: bool = False, g: Graph = None, return_gv: bool = False):
         """
-        Computes and returns a Boolean vertex property 'on_shortest'
-        for vertices that lie on some shortest path from the vertex at source_idx
-        to any vertex in target_indices in an unweighted directed graph.
+        Compute and return a Boolean vertex property 'on_shortest' for vertices that lie on some shortest path
+        from the vertex at source_idx to any vertex in target_indices in an unweighted directed graph.
         
-        If inplace is False (default), the computation is performed on a copy of the graph,
-        leaving the original graph unmodified, and the result property map is returned for
-        the original graph.
-        If inplace is True, the original graph is modified during computation, but the modifications,
-        including any additional vertices and edges, are removed at the end of the function.
+        The function performs the following steps:
+          1. Computes forward distances from the source vertex.
+          2. Computes reverse distances using a reversed graph view and an artificial source vertex.
+          3. Marks vertices that lie on a shortest path if the sum of forward and reverse distances matches 
+             a target's distance.
+        
+        Parameters:
+            source_idx (int): The index of the source vertex.
+            target_indices (List[int]): A list of target vertex indices.
+            inplace (bool, optional): If False (default), the computation is done on a copy of the graph; if True, 
+                                      the computation is performed in-place on the original graph.
+            g (Graph, optional): An optional graph to operate on; defaults to self.core.graph if not provided.
+            return_gv (bool, optional): If True, returns a GraphView filtered by the computed property; otherwise,
+                                        returns the Boolean property map.
+        
+        Returns:
+            Union[GraphView, PropertyMap]: A GraphView if return_gv is True, or the Boolean property map otherwise.
+        
+        Raises:
+            ValueError: If the source index or any target index is invalid.
         """
         g = g or self.core.graph
         if not inplace:
@@ -40,10 +66,10 @@ class OnionNetSearcher:
             except Exception as e:
                 raise ValueError(f"Invalid target index {idx}: {e}")
 
-        # Phase 1: Compute forward distances from source.
+        # Phase 1: Compute forward distances from the source.
         forward_dist = shortest_distance(g_temp, source=source)
 
-        # Phase 2: Compute reverse distances using the reversible view.
+        # Phase 2: Compute reverse distances using a reversed graph view.
         original_reversed = g_temp.is_reversed()
         g_temp.set_reversed(True)
         art_source = g_temp.add_vertex()  # Add an artificial source vertex.
@@ -52,13 +78,13 @@ class OnionNetSearcher:
         w = g_temp.new_edge_property("int")
         for e in g_temp.edges():
             w[e] = 1
-        # For each target, add an edge from art_source with weight 0.
+        # For each target, add an edge from the artificial source with weight 0.
         for t in targets:
             e = g_temp.add_edge(art_source, t)
             w[e] = 0
 
         reverse_dist = shortest_distance(g_temp, source=art_source, weights=w)
-        # Revert the reversed state.
+        # Revert to the original reversed state.
         g_temp.set_reversed(original_reversed)
 
         # Phase 3: Mark vertices on some shortest path.
@@ -67,7 +93,7 @@ class OnionNetSearcher:
         # Determine the number of original vertices (before adding the artificial vertex).
         num_orig = g.num_vertices() if not inplace else g_temp.num_vertices() - 1
         for v in g_temp.vertices():
-            # Skip the artificial vertex if operating inplace
+            # Skip the artificial vertex if operating in-place.
             if inplace and int(v) >= num_orig:
                 continue
             on_shortest_temp[v] = False
@@ -76,22 +102,35 @@ class OnionNetSearcher:
             if forward_dist[v] + reverse_dist[v] in target_dists:
                 on_shortest_temp[v] = True
 
-        # Clean up the modifications if operating inplace.
+        # Clean up modifications.
         if inplace:
             g_temp.remove_vertex(art_source, fast=True)
             result_prop = on_shortest_temp
         else:
-            # Map the computed values from the copy back to the original graph.
+            # Map computed values from the temporary graph back to the original graph.
             result_prop = g.new_vertex_property("bool")
             for v in g.vertices():
                 result_prop[v] = on_shortest_temp[v]
         if return_gv:
-            GraphView(g, vfilt=result_prop)
+            return GraphView(g, vfilt=result_prop)
         else:
             return result_prop
 
     def _bfs_traversal(self, seed_vertices, vfilt, efilt, mode='downstream'):
-        """Perform a simple BFS to update vertex and edge filters."""
+        """
+        Perform a breadth-first search (BFS) traversal starting from the seed vertices and update the vertex 
+        and edge filters accordingly.
+        
+        Parameters:
+            seed_vertices (iterable): An iterable of starting vertices for the BFS.
+            vfilt (PropertyMap): A Boolean vertex property map to be updated with visited vertices.
+            efilt (PropertyMap): A Boolean edge property map to be updated with traversed edges.
+            mode (str, optional): Direction of traversal; 'downstream' (default) for forward traversal or 
+                                  'upstream' for reverse traversal.
+        
+        Raises:
+            ValueError: If mode is not 'upstream' or 'downstream'.
+        """
         visited = set()
         queue = deque(seed_vertices)
         while queue:
@@ -124,9 +163,33 @@ class OnionNetSearcher:
         show_plot: bool = True,
         include_upstream_children: bool = False,
         verbosity: bool = False,
-        g: Graph = None,  # Optionally use a graph or graphview instead, default is to use core
+        g: Graph = None,
         **kwargs
     ) -> GraphView:
+        """
+        Perform a search on the graph to extract a subgraph within a specified distance from a starting node.
+        
+        The search can be conducted in 'downstream', 'upstream', or bidirectional ('bi') mode. It computes the 
+        shortest distances from the starting vertex and returns a GraphView containing vertices within the specified 
+        maximum distance. Optionally, the subgraph can be plotted.
+        
+        Parameters:
+            start_node_idx (int, optional): The index of the starting vertex (default is 0).
+            max_dist (int, optional): Maximum distance (in hops) from the starting vertex (default is 5).
+            direction (str, optional): Direction of search; 'downstream', 'upstream', or 'bi' for bidirectional (default is 'downstream').
+            node_text_prop (str, optional): Vertex property to use for node labels in the plot (default is 'node_label').
+            show_plot (bool, optional): If True, displays a plot of the filtered subgraph (default is True).
+            include_upstream_children (bool, optional): For bidirectional search, if True, include additional upstream children (default is False).
+            verbosity (bool, optional): If True, prints detailed information during the search process (default is False).
+            g (Graph, optional): An optional graph to operate on; defaults to self.core.graph if not provided.
+            **kwargs: Additional keyword arguments passed to graph_draw for plotting.
+        
+        Returns:
+            GraphView: A filtered view of the graph containing vertices within the specified distance from the start vertex.
+        
+        Raises:
+            ValueError: If the starting vertex index is invalid or if an invalid search direction is specified.
+        """
         g = g or self.core.graph
 
         def get_label(v):
@@ -140,13 +203,12 @@ class OnionNetSearcher:
         upstream_nodes = set()
         downstream_nodes = set()
         if direction in ('upstream', 'bi'):
-            # For upstream, reverse the view only if needed.
+            # Create a reversed graph view for upstream search.
             g_rev = GraphView(g, reversed=True)
             distances_up = shortest_distance(g_rev, source=start_vertex, max_dist=max_dist)
             upstream_nodes = {v for v in g.vertices() if distances_up[v] <= max_dist}
             if verbosity:
-                print("Upstream nodes:",
-                    [f"{int(v)} ({get_label(v)})" for v in upstream_nodes])
+                print("Upstream nodes:", [f"{int(v)} ({get_label(v)})" for v in upstream_nodes])
             if include_upstream_children and direction == 'bi':
                 children = set()
                 for v in upstream_nodes:
@@ -156,8 +218,7 @@ class OnionNetSearcher:
             distances_down = shortest_distance(g, source=start_vertex, max_dist=max_dist)
             downstream_nodes = {v for v in g.vertices() if distances_down[v] <= max_dist}
             if verbosity:
-                print("Downstream nodes:",
-                    [f"{int(v)} ({get_label(v)})" for v in downstream_nodes])
+                print("Downstream nodes:", [f"{int(v)} ({get_label(v)})" for v in downstream_nodes])
         if direction == 'bi':
             final = upstream_nodes.union(downstream_nodes)
         elif direction == 'upstream':
@@ -186,6 +247,20 @@ class OnionNetSearcher:
         return_filter: bool = False,
         copy_gv: bool = False
     ) -> Union[GraphView, PropertyMap]:
+        """
+        Generate a GraphView filtered by the specified layer names.
+        
+        Parameters:
+            layer_names (Union[List[str], str]): A single layer name or a list of layer names to filter vertices by.
+            return_filter (bool, optional): If True, returns the Boolean vertex property used for filtering instead of a GraphView.
+            copy_gv (bool, optional): If True, returns a new Graph object constructed from the GraphView.
+        
+        Returns:
+            Union[GraphView, PropertyMap]: The filtered GraphView or Boolean property map based on the layer filter.
+        
+        Raises:
+            ValueError: If any specified layer name does not exist.
+        """
         if isinstance(layer_names, str):
             layer_names = [layer_names]
         missing = [ln for ln in layer_names if ln not in self.core.layer_name_to_code]
@@ -193,7 +268,7 @@ class OnionNetSearcher:
             raise ValueError(f"Layer(s) {missing} do not exist.")
         codes = {self.core.layer_name_to_code[ln] for ln in layer_names}
 
-        # Create a new boolean vertex property as the filter
+        # Create a Boolean vertex property filter based on the specified layer codes.
         vfilt = self.core.graph.new_vertex_property('bool')
         for v in self.core.graph.vertices():
             vfilt[v] = self.core.graph.vp['layer_hash'][v] in codes
@@ -207,6 +282,16 @@ class OnionNetSearcher:
                 return GraphView(self.core.graph, vfilt=vfilt)
 
     def view_components(self, size_threshold: int, connectivity: str = "strong") -> GraphView:
+        """
+        Create a GraphView that shows connected components of the graph with a minimum size.
+        
+        Parameters:
+            size_threshold (int): The minimum number of vertices a component must have to be included.
+            connectivity (str, optional): 'strong' for strongly connected components, otherwise weakly connected (default is "strong").
+        
+        Returns:
+            GraphView: A view of the graph showing only components that meet the size threshold.
+        """
         directed = connectivity.lower() == "strong"
         comp, hist = label_components(self.core.graph, directed=directed)
         valid = {i for i, count in enumerate(hist) if count >= size_threshold}
@@ -221,26 +306,24 @@ class OnionNetSearcher:
         prune_isolated: bool = False
     ) -> GraphView:
         """
-        Filters the graph based on a vertex or edge property and returns a GraphView.
+        Filter the graph based on a specified vertex or edge property and return a GraphView.
         
         Parameters:
-            prop_name (str): Name of the property to filter by.
-            target_value (Any): A single value or a list/set of values to compare.
-            comparison (str): Comparison operator (only used if target_value is not a list/set).
-                                Options: "==", "!=", "<", ">", "<=", ">=".
-            dim (str): Dimension to filter on. Use 'v' for vertices (default) or 'e' for edges.
-            prune_isolated (bool): If True, further filter the view to keep only those vertices
-                                that have at least one incident edge in the filtered view.
+            prop_name (str): The property name to filter by.
+            target_value (Any): The value or set of values to compare against.
+            comparison (str, optional): Comparison operator (default "=="). Options: "==", "!=", "<", ">", "<=", ">=".
+            dim (str, optional): Dimension to filter on; 'v' for vertices (default) or 'e' for edges.
+            prune_isolated (bool, optional): If True, further filters the view to retain only vertices with at least one incident edge.
         
         Returns:
-            GraphView: A filtered view of the graph.
+            GraphView: A filtered view of the graph based on the property filter.
         
         Raises:
-            ValueError: If the specified property doesn't exist or if an invalid dimension is provided.
+            ValueError: If the property does not exist or an invalid dimension is provided.
         """
         import operator
         ops = {"==": operator.eq, "!=": operator.ne, "<": operator.lt,
-            ">": operator.gt, "<=": operator.le, ">=": operator.ge}
+               ">": operator.gt, "<=": operator.le, ">=": operator.ge}
 
         if dim == 'v':
             if prop_name not in self.core.graph.vp:
@@ -255,7 +338,6 @@ class OnionNetSearcher:
                 filt_func = lambda v: cmp_op(prop[v], target_value)
             gv = GraphView(self.core.graph, vfilt=filt_func)
             if prune_isolated:
-                # Keep only vertices with at least one incident edge in the current view.
                 gv = GraphView(gv, vfilt=lambda v: (v.out_degree() + v.in_degree()) > 0)
             return gv
 
@@ -281,19 +363,20 @@ class OnionNetSearcher:
     
     def compose_filters(self, filter_funcs, mode="and", type='v', return_prop: bool = False, g: Graph = None):
         """
-        Create a composite filter based on a list of filter functions.
+        Create a composite filter from a list of individual filter functions.
         
         Parameters:
-            filter_funcs (list): List of functions; each takes a vertex (or edge) and returns True 
-                                if it should be kept.
-            mode (str): "and" (default) requires all functions to return True,
-                        "or" requires at least one to return True.
-            type (str): 'v' for vertices, 'e' for edges.
-            return_prop (bool): If True, return a new Boolean property map instead of a GraphView.
-            g (Graph): The graph to operate on; defaults to self.core.graph.
-                                    
+            filter_funcs (list): A list of functions, each accepting a vertex (or edge) and returning True if it should be kept.
+            mode (str, optional): Logical combination mode; "and" (default) requires all functions to return True, "or" requires at least one.
+            type (str, optional): The dimension of filtering; 'v' for vertices (default) or 'e' for edges.
+            return_prop (bool, optional): If True, returns a new Boolean property map instead of a GraphView.
+            g (Graph, optional): The graph to operate on; defaults to self.core.graph.
+        
         Returns:
-            Either a GraphView or a PropertyMap (vertex or edge) of booleans.
+            Union[GraphView, PropertyMap]: A composite filter represented as a GraphView or a Boolean property map.
+        
+        Raises:
+            ValueError: If an invalid mode or type is specified.
         """
         g = g or self.core.graph
 
@@ -329,40 +412,34 @@ class OnionNetSearcher:
             
     def create_bipartite_gv(self, layer1: str, layer2: str, prop_name: str = 'layer_decoded') -> GraphView:
         """
-        Create a bipartite GraphView that only retains vertices whose property `prop_name`
-        is either layer1 or layer2, and only keeps edges that connect vertices between the two layers.
+        Create a bipartite GraphView that retains vertices whose specified property matches either layer1 or layer2,
+        and includes only edges connecting vertices between these two layers.
         
-        Parameters
-        ----------
-        layer1 : str
-            The first layer value (e.g. 'swisslipids').
-        layer2 : str
-            The second layer value (e.g. 'sl_chebi').
-        prop_name : str, optional
-            The name of the vertex property to filter on (default is 'layer_decoded').
+        Parameters:
+            layer1 (str): The first layer value (e.g., 'swisslipids').
+            layer2 (str): The second layer value (e.g., 'sl_chebi').
+            prop_name (str, optional): The vertex property used for filtering (default is 'layer_decoded').
         
-        Returns
-        -------
-        GraphView
-            A filtered view of the graph containing only vertices in the given layers and only
-            edges connecting vertices from layer1 to layer2. Additionally, vertices with no
-            incident edges in the filtered view are removed.
+        Returns:
+            GraphView: A filtered view of the graph containing only vertices in the specified layers and edges 
+            connecting vertices from different layers. Vertices without any incident edges in the filtered view are removed.
         """
         g = self.core.graph
 
-        # Only keep vertices whose 'prop_name' is either layer1 or layer2.
+        # Filter vertices based on the specified property.
         initial_vfilt = lambda v: g.vp[prop_name][v] in {layer1, layer2}
 
-        # Only keep edges that connect a vertex in layer1 with one in layer2.
+        # Filter edges to retain only those connecting vertices from layer1 to layer2.
         edge_filter = lambda e: (
             (g.vp[prop_name][e.source()] == layer1 and g.vp[prop_name][e.target()] == layer2) or
             (g.vp[prop_name][e.source()] == layer2 and g.vp[prop_name][e.target()] == layer1)
         )
 
-        # Create a first GraphView applying the vertex and edge filters.
+        # Create a GraphView applying both vertex and edge filters.
         gv = GraphView(g, vfilt=initial_vfilt, efilt=edge_filter)
 
         # Now define an additional vertex filter to keep only vertices that have at least one incident edge.
+        # I.e. filter out those that are isolated
         vfilt_connected = lambda v: (v.out_degree() + v.in_degree()) > 0
 
         # Create a second, nested GraphView applying the additional vertex filter.
