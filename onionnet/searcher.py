@@ -281,21 +281,23 @@ class OnionNetSearcher:
             else:
                 return GraphView(self.core.graph, vfilt=vfilt)
 
-    def view_components(self, size_threshold: int, connectivity: str = "strong") -> GraphView:
+    def view_components(self, size_threshold: int, connectivity: str = "strong", g: Graph = None) -> GraphView:
         """
         Create a GraphView that shows connected components of the graph with a minimum size.
         
         Parameters:
             size_threshold (int): The minimum number of vertices a component must have to be included.
             connectivity (str, optional): 'strong' for strongly connected components, otherwise weakly connected (default is "strong").
+            g (Graph, optional): The graph to operate on; defaults to self.core.graph.
         
         Returns:
             GraphView: A view of the graph showing only components that meet the size threshold.
         """
+        g = g or self.core.graph
         directed = connectivity.lower() == "strong"
-        comp, hist = label_components(self.core.graph, directed=directed)
+        comp, hist = label_components(g, directed=directed)
         valid = {i for i, count in enumerate(hist) if count >= size_threshold}
-        return GraphView(self.core.graph, vfilt=lambda v: comp[v] in valid)
+        return GraphView(g, vfilt=lambda v: comp[v] in valid)
 
     def filter_view_by_property(
         self, 
