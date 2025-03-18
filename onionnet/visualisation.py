@@ -133,7 +133,7 @@ def color_nodes(
 
     # Handle colors with custom colormap or default colormap
     elif method == "categorical":
-        categories = list(set(g.vp[prop_name]))
+        categories = sorted(set(g.vp[prop_name]))
         colormap = custom_colormap or cm.tab10
         colormap_len = len(colormap.colors)
         color_map = {cat: colormap(i % colormap_len) for i, cat in enumerate(categories)}
@@ -456,7 +456,7 @@ def color_edges(g, prop_name, method="categorical", generate_legend=False, custo
             legend = custom_color_dict
 
     elif method == "categorical":
-        categories = list(set(g.ep[prop_name]))
+        categories = sorted(set(g.ep[prop_name]))
         colormap = custom_colormap or cm.tab10
         colormap_len = len(colormap.colors)
         color_map = {cat: colormap(i % colormap_len) for i, cat in enumerate(categories)}
