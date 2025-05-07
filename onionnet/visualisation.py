@@ -92,7 +92,8 @@ def color_nodes(
     generate_legend=False,
     custom_colormap=None,
     custom_color_dict=None,
-    zero_centred=False
+    zero_centred=False,
+    transparency=1.0
 ):
     """
     Assign colors to nodes in a graph.
@@ -109,7 +110,8 @@ def color_nodes(
     - custom_colormap (Colormap or None): A custom matplotlib colormap for continuous values.
     - custom_color_dict (dict or None): A user-defined dictionary mapping property values to colors.
     - zero_centered (bool): If True (and method is 'continuous'), adjusts the normalization range so that
-          zero is centered (i.e. using symmetric bounds [-abs(max_val), abs(max_val)]). Defaults to False. 
+          zero is centered (i.e. using symmetric bounds [-abs(max_val), abs(max_val)]). Defaults to False.
+    - transparency (float): Transparency level for the colors (0.0 to 1.0). Default is 1.0 (fully opaque). 
 
     Returns:
     -------
@@ -125,11 +127,12 @@ def color_nodes(
         for v in g.vertices():
             value = g.vp[prop_name][v]
             if value in custom_color_dict:
-                v_color[v] = custom_color_dict[value]
+                col = custom_color_dict[value]
+                v_color[v] = tuple(col[:3]) + (transparency,)
             else:
                 raise ValueError(f"Value '{value}' not found in custom_color_dict.")
         if generate_legend:
-            legend = custom_color_dict
+            legend = {k: tuple(v[:3]) + (transparency,) for k, v in custom_color_dict.items()}
 
     # Handle colors with custom colormap or default colormap
     elif method == "categorical":
@@ -139,9 +142,9 @@ def color_nodes(
         color_map = {cat: colormap(i % colormap_len) for i, cat in enumerate(categories)}
         for v in g.vertices():
             category = g.vp[prop_name][v]
-            v_color[v] = color_map[category][:3] + (1.0,)
+            v_color[v] = color_map[category][:3] + (transparency,)
         if generate_legend:
-            legend = {cat: color_map[cat][:3] + (1.0,) for cat in categories}
+            legend = {cat: color_map[cat][:3] + (transparency,) for cat in categories}
 
     elif method == "continuous":
         values = [float(g.vp[prop_name][v]) for v in g.vertices()]
@@ -156,17 +159,21 @@ def color_nodes(
         scalar_map = cm.ScalarMappable(norm=norm, cmap=colormap)
         for v in g.vertices():
             value = float(g.vp[prop_name][v])
-            v_color[v] = scalar_map.to_rgba(value)[:3] + (1.0,)
+            v_color[v] = scalar_map.to_rgba(value)[:3] + (transparency,)
         if generate_legend:
-            legend = {"min_col": scalar_map.to_rgba(min_val), "max_col": scalar_map.to_rgba(max_val),
-                      "min_val": min_val, "max_val": max_val}
+            legend = {
+              "min_col": scalar_map.to_rgba(min_val)[:3] + (transparency,),
+              "max_col": scalar_map.to_rgba(max_val)[:3] + (transparency,),
+              "min_val": min_val,
+              "max_val": max_val
+            }
 
     elif method == "boolean":
         for v in g.vertices():
             value = g.vp[prop_name][v]
-            v_color[v] = (1.0, 0.0, 0.0, 1.0) if bool(value) else (0.5, 0.5, 0.5, 1.0)
+            v_color[v] = (1.0, 0.0, 0.0, transparency) if bool(value) else (0.5, 0.5, 0.5, transparency)
         if generate_legend:
-            legend = {"True": (1.0, 0.0, 0.0, 1.0), "False": (0.5, 0.5, 0.5, 1.0)}
+            legend = {"True": (1.0, 0.0, 0.0, transparency), "False": (0.5, 0.5, 0.5, transparency)}
 
     else:
         raise ValueError("Unsupported color method. Choose from: categorical, continuous, boolean.")
