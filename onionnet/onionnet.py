@@ -178,6 +178,14 @@ class OnionNet:
         """
         self.prop_manager.create_node_label_property(*args, **kwargs)
 
+    def decode_property_labels_bulk(self, *args, **kwargs) -> None:
+        """
+        Decode bulk node label properties for the graph.
+        
+        Delegates to the property manager's decode_property_labels_bulk method.
+        """
+        self.prop_manager.decode_property_labels_bulk(*args, **kwargs)
+
     @property
     def node_map(self) -> Dict[Tuple[str, str], int]:
         """

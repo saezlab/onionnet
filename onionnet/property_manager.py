@@ -2,6 +2,7 @@ from .core import OnionNetGraph
 from .utils import infer_property_type, map_categorical_property
 from typing import List, Any, Dict
 import numpy as np
+import pandas as pd
 
 """
 This module provides the OnionNetPropertyManager class, which handles property access, conversion, and management for vertices (and edges) in an OnionNetGraph.
@@ -255,3 +256,51 @@ class OnionNetPropertyManager:
             self.core.graph.ep[new_prop_name] = human_readable_prop
         
         print(f"{encoded_prop_type.upper()} property '{new_prop_name}' created successfully.")
+
+
+    def decode_property_labels_bulk(
+        self,
+        df: pd.DataFrame,
+        encoded_prop_type: str = 'v'
+    ) -> None:
+        """
+        Bulk decode categorical properties based on DataFrame columns.
+
+        Iterates over each column in the provided DataFrame and applies decode_property_labels
+        to object-type columns, creating a decoded property for each via mapping integer codes
+        to human-readable strings.
+
+        Parameters:
+            df (pd.DataFrame): DataFrame containing columns corresponding to encoded properties.
+            encoded_prop_type (str, optional): 'v' for vertex properties or 'e' for edge properties.
+                Defaults to 'v'.
+
+        Side Effects:
+            For each object-type column in df, adds a new decoded property to the graph by calling
+            decode_property_labels. Prints a message for non-object-type columns indicating no decoding
+            was performed.
+
+        Raises:
+            KeyError: If decode_property_labels raises a KeyError for a missing property.
+        """
+        def clean_colname(colname: str) -> str:
+            return (
+                colname.replace(' ', '_')
+                       .replace('(', '')
+                       .replace(')', '')
+                       .replace('/', '_')
+                       .replace('-', '_')
+                       .lower()
+            )
+
+        cleaned_colnames = [clean_colname(col) for col in df.columns]
+
+        for orig, cleaned in zip(df.columns, cleaned_colnames):
+            if df[orig].dtype == object:
+                self.decode_property_labels(
+                    encoded_prop_type=encoded_prop_type,
+                    encoded_prop_name=orig,
+                    new_prop_name=f"{cleaned}_decoded"
+                )
+            else:
+                print(f"{orig} prop left as is, no decoding needed (not an object type)")
