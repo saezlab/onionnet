@@ -14,6 +14,7 @@ dependencies:
   - sphinx>=4.0
   - sphinx-book-theme       # the sphinx_book_theme package
   - myst-nb                 # MyST + notebook support
+  - nbsphinx
   - sphinx-copybutton
   - sphinx-autodoc-typehints
   - sphinx-tabs
