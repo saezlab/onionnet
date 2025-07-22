@@ -24,4 +24,4 @@ dependencies:
 
   - pip:
       - -e .
-      - git+https://github.com/saezlab/onionnet.git#egg:onionnet
+      # - git+https://github.com/saezlab/onionnet.git#egg:onionnet
