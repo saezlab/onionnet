@@ -187,3 +187,5 @@ notebooks/lib/vis-9.1.2/vis-network.min.js
 mermaid_plan.mm
 classplan.drawio
 notebooks/lib*
+
+docs/source/notebooks/data/df_swisslipids*
