@@ -1,0 +1,7 @@
+# prop_name, value
+name,moreno_sociograms (grade_2)
+description,Relationships between pupils in a classroom. A directed edge exists if the source wants to sit next to the target. Each child can only choose two others.
+citation,"['Jacob Levy Moreno, “Who Shall Survive? A New Approach to the Problem of Human Interrelations”, Washington D.C.: Nervous and Mental Disease Publishing Co., https://doi.org/10.1037/10648-000', \"Martin Grandjean, “Moreno's Sociograms” (2018), https://doi.org/10.5281/zenodo.1998343\"]"
+url,https://github.com/grandjeanmartin/sociograms
+upstream_license,"CC BY 4.0, https://creativecommons.org/licenses/by/4.0/"
+tags,"['Social', 'Offline', 'Weighted']"
