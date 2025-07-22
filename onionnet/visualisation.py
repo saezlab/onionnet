@@ -352,9 +352,14 @@ def get_legend(source, prop=None, ordered_cats=None, verbose=False, mode=None, c
             norm = plt.Normalize(vmin=min_val, vmax=max_val)
             sm = cm.ScalarMappable(norm=norm, cmap=cmap)
             sm.set_array([])
-            plt.figure(figsize=(6, 1))
-            cbar = plt.colorbar(sm, orientation='horizontal')
-            cbar.set_label(prop.capitalize() if prop else "Value")
+            fig, ax = plt.subplots(figsize=(8, 0.5))
+            # Tell matplotlib “cax=ax” so that this sole axes is used for the bar itself
+            cbar = fig.colorbar(sm, cax=ax, orientation='horizontal')
+            # This is still your axis‐label under the bar
+            # cbar.set_label(prop.capitalize() if prop else "Value")
+            # If the caller passed in a title, draw it *above* the bar
+            if title:
+                cbar.ax.set_title(title, pad=10)
             plt.show()
             return
         else:
@@ -387,9 +392,14 @@ def get_legend(source, prop=None, ordered_cats=None, verbose=False, mode=None, c
             norm = plt.Normalize(vmin=min_val, vmax=max_val)
             sm = cm.ScalarMappable(norm=norm, cmap=cmap)
             sm.set_array([])
-            plt.figure(figsize=(6, 1))
-            cbar = plt.colorbar(sm, orientation='horizontal')
-            cbar.set_label(prop.capitalize() if prop else "Value")
+            fig, ax = plt.subplots(figsize=(8, 0.5))
+            # Tell matplotlib “cax=ax” so that this sole axes is used for the bar itself
+            cbar = fig.colorbar(sm, cax=ax, orientation='horizontal')
+            # This is still your axis‐label under the bar
+            #cbar.set_label(prop.capitalize() if prop else "Value")
+            # If the caller passed in a title, draw it *above* the bar
+            if title:
+                cbar.ax.set_title(title, pad=10)
             plt.show()
             return
         elif mode == 'categorical':
