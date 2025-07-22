@@ -172,3 +172,18 @@ cython_debug/
 
 # Custom:
 .DS_Store 
+onionnet.egg-info/*
+/onionnet/.data/*
+!onionnet/.data/.gitkeep
+__pycache__
+.DS_Store
+notebooks/lib/bindings/utils.js
+notebooks/lib/tom-select/tom-select.complete.min.js
+notebooks/lib/tom-select/tom-select.css
+notebooks/lib/vis-9.0.4/vis-network.css
+notebooks/lib/vis-9.0.4/vis-network.min.js
+notebooks/lib/vis-9.1.2/vis-network.css
+notebooks/lib/vis-9.1.2/vis-network.min.js
+mermaid_plan.mm
+classplan.drawio
+notebooks/lib*
