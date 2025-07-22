@@ -188,4 +188,5 @@ mermaid_plan.mm
 classplan.drawio
 notebooks/lib*
 
-docs/source/notebooks/data/df_swisslipids*
+docs/source/notebooks/.data/df_swisslipids_*
+onionnet/docs/source/notebooks/.data/df_swisslipids_nodes.tsv
