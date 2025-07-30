@@ -594,3 +594,84 @@ def test_summary_counts(builder_and_core, toy_nodes, toy_edges):
     assert "dropped_invalid=1" in s
     assert "final=3" in s.splitlines()[0]  # first line
     assert "final=2" in s.splitlines()[1]
+
+# What happens when we introduce a brand-new layer mid-stream?
+def test_layer_mapping_extends_with_new_layer(builder_and_core):
+    bldr, core = builder_and_core
+    # first ingest layer “0”
+    df1 = pd.DataFrame({"node_id":["A"], "layer":["0"]})
+    bldr.add_vertices_from_dataframe(df1, "node_id","layer", drop_na=False)
+    first_map = core._map_layer("0")
+    # now ingest layer “2”
+    df2 = pd.DataFrame({"node_id":["B"], "layer":["2"]})
+    bldr.add_vertices_from_dataframe(df2, "node_id","layer", drop_na=False)
+    # ensure the new layer got a new integer code, not reusing “0”
+    assert core._map_layer("2") != first_map
+
+# We have have custom property_types override for nodes so lets do the same for edges
+def test_edge_string_override_forces_categorical(builder_and_core, toy_nodes, toy_edges):
+    bldr, core = builder_and_core
+    bldr.add_vertices_from_dataframe(toy_nodes, "node_id","layer", drop_na=False)
+    # strength is numeric, but we force it to be categorical
+    bldr.add_edges_from_dataframe(
+        toy_edges,
+        "source_id","source_layer","target_id","target_layer",
+        property_cols=["strength"], drop_na=False,
+        string_override=True
+    )
+    assert "strength" in core.edge_categorical_mappings
+    assert core.graph.ep["strength"].value_type().startswith("int")
+
+# Testing edges where only one endpoint layer is new or missing, drop_na=False but invalid endpoints get filtered out
+def test_edge_partial_invalid_layers(builder_and_core, toy_nodes):
+    bldr, core = builder_and_core
+    bldr.add_vertices_from_dataframe(toy_nodes, "node_id","layer", drop_na=False)
+    df = pd.DataFrame({
+      "source_id":["A","B"],
+      "source_layer":["0","X"],   # “X” not seen before
+      "target_id":["B","A"],
+      "target_layer":["0","0"],
+      "w":[1,2]
+    })
+    bldr.add_edges_from_dataframe(df, "source_id","source_layer",
+                                  "target_id","target_layer",
+                                  property_cols=["w"], drop_na=False)
+    # only the valid A→B edge should be added
+    assert core.graph.num_edges() == 1
+
+# If we feed in 10,000 distinct categories in one go, does our categorical mapping still scale (no memory leaks or integer overflows)?
+@pytest.mark.slow
+def test_huge_categorical_cardinality(builder_and_core, toy_nodes):
+    bldr, core = builder_and_core
+    bldr.add_vertices_from_dataframe(toy_nodes, "node_id","layer", drop_na=False)
+    N = 10_000*1000
+    cats = [f"C{i}" for i in range(N)]
+    df = pd.DataFrame({
+      "source_id":    ["A"]*N,
+      "source_layer": ["0"]*N,
+      "target_id":    ["B"]*N,
+      "target_layer": ["0"]*N,
+      "cat":          cats
+    })
+    bldr.add_edges_from_dataframe(df, "source_id","source_layer",
+                                  "target_id","target_layer",
+                                  property_cols=["cat"], drop_na=False, 
+                                  drop_duplicates=False)
+    # confirm we got N distinct codes
+    assert len(core.edge_categorical_mappings["cat"]["str_to_int"]) == N
+
+# Re-running the entire grow_onion on the same data with drop_duplicates=False should append vertices/edges but not corrupt existing mappings or reorder IDs.
+# TODO: double check intended consequences of this
+def test_grow_onion_idempotent(builder_and_core, toy_nodes, toy_edges):
+    bldr, core = builder_and_core
+    bldr.grow_onion(toy_nodes, toy_edges, drop_na=False, drop_duplicates=False)
+    before_nodes = core.graph.num_vertices()
+    before_edges = core.graph.num_edges()
+    # run again
+    bldr.grow_onion(toy_nodes, toy_edges, drop_na=False, drop_duplicates=False)
+    # vertices and edges should have doubled
+    assert core.graph.num_vertices() == before_nodes * 2
+    assert core.graph.num_edges()    == before_edges * 2
+    # original mapping intact
+    for (lay, nid), idx in core.custom_id_to_vertex_index.items():
+        assert isinstance(idx, int)

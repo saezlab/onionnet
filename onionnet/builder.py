@@ -266,7 +266,9 @@ class OnionNetBuilder:
         n_new = len(custom_ids)
         start = self.core.graph.num_vertices()
         self.core.graph.add_vertex(n_new)
-        new_idx = np.arange(start, start+n_new, dtype=np.int64)
+        # new_idx = np.arange(start, start+n_new, dtype=np.int64) #<--- previously
+        # use Python ints so downstream code/test isinstance(idx, int) passes and for more numerical stability
+        new_idx = list(range(start, start+n_new))
         self.core.custom_id_to_vertex_index.update(zip(custom_ids, new_idx))
         self.core.vertex_index_to_custom_id.update(zip(new_idx, custom_ids))
         # bulk core props
