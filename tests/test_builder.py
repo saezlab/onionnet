@@ -156,7 +156,7 @@ def test_empty_inputs(builder_and_core):
     assert core.graph.num_vertices() == 0
     assert core.graph.num_edges()    == 0
 
-# 13) Self-loops supported and duplicates kept by default in add_edges
+# 13) Self-loops supported (A->A) but duplicates not kept by default in add_edges
 def test_self_loops_are_supported(builder_and_core, toy_nodes):
     builder, core = builder_and_core
     builder.add_vertices_from_dataframe(toy_nodes, "node_id","layer", drop_na=False)
@@ -170,9 +170,9 @@ def test_self_loops_are_supported(builder_and_core, toy_nodes):
     builder.add_edges_from_dataframe(self_loops,
                                       source_id_col="source_id", source_layer_col="source_layer",
                                       target_id_col="target_id", target_layer_col="target_layer",
-                                      property_cols=None, drop_na=False)
-    # three edges (including duplicate A->A) should be present
-    assert core.graph.num_edges() == 3
+                                      property_cols=None, drop_na=False, drop_duplicates=True)
+    # two edges (excluding duplicate A->A) should be present
+    assert core.graph.num_edges() == 2
 
 # 14) Mixed-type IDs and layers are cast to str
 def test_mixed_type_ids_and_layers_cast_to_str(builder_and_core):
