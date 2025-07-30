@@ -263,3 +263,172 @@ def test_bulk_ingest_performance(builder_and_core):
                        drop_na=False, drop_duplicates=True)
     assert core.graph.num_vertices() == N
     assert core.graph.num_edges() <= 2*N
+
+
+
+#### Integration Tests ####
+
+
+def test_multi_layer_cross_edges(builder_and_core):
+    """
+    Nodes live on layers 0,1,2,1, and edges jump between them.
+    The one phantom edge (X→A) should be dropped; the other 4 survive.
+    """
+    bldr, core = builder_and_core
+    nodes = pd.DataFrame({
+        "node_id": ["A","B","C","D"],
+        "layer":   ["0","1","2","1"],
+    })
+    edges = pd.DataFrame({
+        "source_id":    ["A","B","C","D","X"],
+        "source_layer": ["0","1","2","1","0"],
+        "target_id":    ["B","C","D","A","A"],
+        "target_layer": ["1","2","1","0","0"],
+    })
+    bldr.grow_onion(
+        nodes, edges,
+        node_prop_cols=[],
+        edge_prop_cols=[],
+        drop_na=False,
+        drop_duplicates=True
+    )
+    # four real nodes, four valid edges
+    assert core.graph.num_vertices() == 4
+    assert core.graph.num_edges()    == 4
+
+    # Every edge's endpoints map back into our custom_id/bookkeeping
+    for e in core.graph.edges():
+        s, t = e.source(), e.target()
+        assert s in core.vertex_index_to_custom_id
+        assert t in core.vertex_index_to_custom_id
+
+def test_incremental_builds_preserve_indices(builder_and_core):
+    """
+    First ingest A→B, then later add C→A. Ensure A,B keep same indices
+    and C is appended—but no duplicates.
+    """
+    bldr, core = builder_and_core
+
+    # first batch
+    n1 = pd.DataFrame({"node_id":["A","B"],"layer":["0","0"]})
+    e1 = pd.DataFrame({
+        "source_id":["A"],
+        "source_layer":["0"],
+        "target_id":["B"],
+        "target_layer":["0"]
+    })
+    bldr.grow_onion(n1, e1, node_prop_cols=[], edge_prop_cols=[], drop_na=False, drop_duplicates=True)
+    idxA = core.custom_id_to_vertex_index[(core._map_layer("0"), core._map_node_id("A"))]
+    idxB = core.custom_id_to_vertex_index[(core._map_layer("0"), core._map_node_id("B"))]
+    assert core.graph.num_vertices() == 2
+    assert core.graph.num_edges()    == 1
+
+    # second batch
+    n2 = pd.DataFrame({"node_id":["C"],"layer":["1"]})
+    e2 = pd.DataFrame({
+        "source_id":["C"],
+        "source_layer":["1"],
+        "target_id":["A"],
+        "target_layer":["0"]
+    })
+    bldr.grow_onion(n2, e2, node_prop_cols=[], edge_prop_cols=[], drop_na=False, drop_duplicates=True)
+    # indices A and B unchanged; C is new
+    assert core.custom_id_to_vertex_index[(core._map_layer("0"), core._map_node_id("A"))] == idxA
+    assert core.custom_id_to_vertex_index[(core._map_layer("0"), core._map_node_id("B"))] == idxB
+    assert core.graph.num_vertices() == 3
+    assert core.graph.num_edges()    == 2
+
+def test_interleaved_duplicates_and_missing(builder_and_core):
+    """
+    A DataFrame with both duplicates and some missing keys;
+    with drop_na + drop_duplicates, only unique, complete rows survive.
+    """
+    bldr, core = builder_and_core
+    df = pd.DataFrame({
+        "node_id": ["A","A", None, "C", "C"],
+        "layer":   ["0","0", "1", None, "2"]
+    })
+    bldr.add_vertices_from_dataframe(df, "node_id", "layer",
+                                     property_cols=None,
+                                     drop_na=True)  # must drop the None layer row
+    # only A@0 and C@2 remain → 2 vertices
+    assert core.graph.num_vertices() == 2
+    kept = set(core.vertex_index_to_custom_id.values())
+    assert kept == {
+        (core._map_layer("0"), core._map_node_id("A")),
+        (core._map_layer("2"), core._map_node_id("C"))
+    }
+
+def test_id_layer_namespacing(builder_and_core):
+    """
+    Two nodes both named "A" but on different layers must remain distinct.
+    """
+    bldr, core = builder_and_core
+    nodes = pd.DataFrame({
+        "node_id": ["A","A"],
+        "layer":   ["0","1"]
+    })
+    bldr.add_vertices_from_dataframe(nodes, "node_id","layer", drop_na=False)
+    # Should see two distinct entries in custom_id_to_vertex_index
+    keys = set(core.custom_id_to_vertex_index.keys())
+    assert len(keys) == 2
+    assert (core._map_layer("0"), core._map_node_id("A")) in keys
+    assert (core._map_layer("1"), core._map_node_id("A")) in keys
+
+def test_repeated_growth_preserves_properties(builder_and_core, toy_nodes, toy_edges):
+    """
+    Grow once with 'weight', then again with a new 'group' prop.
+    You should end up with both properties attached.
+    """
+    bldr, core = builder_and_core
+    # first ingest only weight
+    bldr.grow_onion(toy_nodes, toy_edges,
+                    node_prop_cols=["weight"], edge_prop_cols=[],
+                    drop_na=False, drop_duplicates=False)
+    # then re-grow adding 'group'
+    # (edges are the same, so drop_duplicates=False to just append new props)
+    bldr.grow_onion(toy_nodes, toy_edges,
+                    node_prop_cols=["group"], edge_prop_cols=[],
+                    drop_na=False, drop_duplicates=False)
+    assert "weight" in core.graph.vp
+    assert "group"  in core.graph.vp
+    # vertex count doubled, but both props present on all vertices
+    assert core.graph.num_vertices() == len(toy_nodes) * 2
+
+@pytest.mark.slow
+def test_bulk_ingest_random_noise(builder_and_core):
+    """
+    Stress test: 1000 random nodes/edges with some missing & dupes.
+    Ensures no edge endpoint ever falls outside the vertex map.
+    """
+    bldr, core = builder_and_core
+    rng = np.random.default_rng(1234)
+
+    # generate 500 nodes, string IDs like 'N42', layers '0','1','2'
+    ids   = [f"N{i}" for i in rng.integers(0, 100, 500)]
+    lays  = rng.choice(["0","1","2"], size=500)
+    df_n  = pd.DataFrame({"node_id": ids, "layer": lays})
+
+    # generate 1000 edges, possibly referring to some missing id/layer combos
+    s_ids = rng.choice(ids + ["XX","YY"], size=1000)
+    s_lays= rng.choice(["0","1","2"], size=1000)
+    t_ids = rng.choice(ids + ["ZZ"], size=1000)
+    t_lays= rng.choice(["0","1","2"], size=1000)
+    df_e  = pd.DataFrame({
+      "source_id":    s_ids,
+      "source_layer": s_lays,
+      "target_id":    t_ids,
+      "target_layer": t_lays
+    })
+
+    bldr.grow_onion(df_n, df_e,
+                    node_prop_cols=[], edge_prop_cols=[],
+                    drop_na=False, drop_duplicates=True)
+
+    # no more edges than raw rows
+    assert core.graph.num_edges() <= len(df_e)
+
+    # every edge endpoint is a known vertex
+    for e in core.graph.edges():
+        assert e.source() in core.vertex_index_to_custom_id
+        assert e.target() in core.vertex_index_to_custom_id

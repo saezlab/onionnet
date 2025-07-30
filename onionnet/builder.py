@@ -64,7 +64,7 @@ class OnionNetBuilder:
             df_edges (pd.DataFrame): DataFrame containing edge information.
             node_prop_cols (List[str], optional): List of node property column names. Defaults to None.
             edge_prop_cols (List[str], optional): List of edge property column names. Defaults to None.
-            drop_na (bool, optional): Flag to drop rows with missing key values. Defaults to True.
+            drop_na (bool, optional): Flag to drop rows with missing key values. Defaults to False.
             drop_duplicates (bool, optional): Flag to remove duplicate entries. Defaults to True.
             use_display (bool, optional): Flag to display a snippet of data using IPython display if available. Defaults to False.
             node_id_col (str, optional): Column name for node identifier. Defaults to 'node_id'.
