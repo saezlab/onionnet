@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from typing import List, Any
 from .utils import infer_property_type, map_categorical_property
+import warnings
 
 """
 This module provides the OnionNetBuilder class, which is responsible for ingesting node and edge DataFrames into an OnionNetGraph.
@@ -79,8 +80,11 @@ class OnionNetBuilder:
             ValueError: If required columns are missing in the node or edge DataFrames.
         """
         # Use default property columns if none specified.
-        node_prop_cols = node_prop_cols or None
-        edge_prop_cols = edge_prop_cols or None
+        # i.e. keep an empty list when the user explicitly passes [], but default to no extra props when they pass None
+        if node_prop_cols is None:
+            node_prop_cols = []
+        if edge_prop_cols is None:
+            edge_prop_cols = []
         
         # Validate required columns.
         missing_nodes = set([node_id_col, node_layer_col] + node_prop_cols) - set(df_nodes.columns)
@@ -129,17 +133,18 @@ class OnionNetBuilder:
         """
         df = df_nodes.copy()
     
-        # after copying df and before any astype/casting, see if NAs are present and no drop_na setting provided:
+        # Fail-fast on missing keys when drop_na=False
+        key_cols = [id_col, layer_col]  # for vertices
         if not drop_na:
-            mask_null = df[[id_col, layer_col]].isna().any(axis=1)
+            mask_null = df[key_cols].isna().any(axis=1)
             if mask_null.any():
                 raise ValueError(
-                    f"Detected NA in {id_col}/{layer_col} but drop_na=False; "
+                    f"Detected NA in {key_cols} but drop_na=False; "
                     "please set drop_na=True to drop missing rows or clean your data first."
                 )
-        # now do the existing drop_na=True branch:
+        # Drop missing rows if the user asked for it
         if drop_na:
-            df = df.dropna(subset=[id_col, layer_col])
+            df = df.dropna(subset=[key_cols])
 
         # Enforce that id_col and layer_col are strings.
         df[id_col] = df[id_col].astype(str)
@@ -204,20 +209,18 @@ class OnionNetBuilder:
         """
         df = df_edges.copy()
 
-        # Fail fast if there are NAs in any of the 4 key columns and drop_na=False
+        # Fail-fast on missing keys when drop_na=False
+        key_cols = [source_id_col, source_layer_col, target_id_col, target_layer_col]  # for edges
         if not drop_na:
-            key_cols = [source_id_col, source_layer_col,
-                        target_id_col, target_layer_col]
             mask_null = df[key_cols].isna().any(axis=1)
             if mask_null.any():
                 raise ValueError(
-                    f"Detected NA in edge keys {key_cols} but drop_na=False; "
+                    f"Detected NA in {key_cols} but drop_na=False; "
                     "please set drop_na=True to drop missing rows or clean your data first."
                 )
-
-        # If drop_na=True, remove those rows up front
+        # Drop missing rows if the user asked for it
         if drop_na:
-            df = df.dropna(subset=[source_id_col, source_layer_col, target_id_col, target_layer_col])
+            df = df.dropna(subset=[key_cols])
 
         # Enforce that id_col and layer_col are strings.
         df[source_id_col] = df[source_id_col].astype(str)
@@ -238,7 +241,10 @@ class OnionNetBuilder:
         tgt_indices = [self.core.custom_id_to_vertex_index.get(t) for t in target_ids]
         valid = [i for i, (s, t) in enumerate(zip(src_indices, tgt_indices)) if s is not None and t is not None]
         if not valid:
-            print("No valid edges to add.")
+            warnings.warn(
+                "No valid edges to add: all edges reference missing vertices. "
+                "Check that your source/target IDs and layers match ingested nodes.",
+                UserWarning)
             return
         edge_array = np.column_stack(([src_indices[i] for i in valid], [tgt_indices[i] for i in valid]))
         
