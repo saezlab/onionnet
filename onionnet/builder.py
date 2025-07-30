@@ -155,7 +155,13 @@ class OnionNetBuilder:
         valid_mask = [(s is not None and t is not None) for s,t in zip(src_idx, tgt_idx)]
         df_e_valid = df_e_clean[valid_mask]
 
-        self._stats['edges_dropped_invalid'] = len(df_e_clean) - len(df_e_valid)
+        # record how many edges were invalidated by missing endpoints
+        invalid_endpoints = len(df_e_clean) - len(df_e_valid)
+        # total “invalid” = those dropped by NA + those dropped by bad endpoints
+        self._stats['edges_dropped_invalid'] = (
+            self._stats['edges_dropped_na']
+            + invalid_endpoints
+        )
 
         # optionally display
         if use_display and IPYTHON_AVAILABLE:
@@ -218,6 +224,12 @@ class OnionNetBuilder:
             string_override (bool): Treat all props as categorical if True.
             property_types (dict): Explicit types for properties.
         """
+        # check for column name conflicts with internal keys
+        internal = {'layer_hash','node_id_hash','v_int'}
+        if property_cols:
+            collision = set(property_cols) & internal
+            if collision:
+                raise ValueError(f"Cannot use {collision!r} as property name, it's reserved for internal keys")
         # prop-col existence
         if property_cols:
             missing = set(property_cols) - set(df_nodes.columns)
@@ -270,14 +282,30 @@ class OnionNetBuilder:
                         self.core.graph.vp[prop] = self.core.graph.new_vertex_property(typ)
                     self.core.graph.vp[prop].a[start:] = vals
                 else:
-                    mapped, mapping = map_categorical_property(prop, vals)
-                    self.core.vertex_categorical_mappings[prop] = {
-                        'str_to_int': mapping,
-                        'int_to_str': {v:k for k,v in mapping.items()}
-                    }
+                    # extend existing mapping instead of restarting it
+                    if prop in self.core.vertex_categorical_mappings:
+                        cmap = self.core.vertex_categorical_mappings[prop]['str_to_int']
+                        inv  = self.core.vertex_categorical_mappings[prop]['int_to_str']
+                        mapped = []
+                        for v in vals:
+                            if v not in cmap:
+                                newcode = max(cmap.values(), default=-1) + 1
+                                cmap[v]   = newcode
+                                inv[newcode] = v
+                            mapped.append(cmap[v])
+                    else:
+                        mapped, mapping = map_categorical_property(prop, vals)
+                        inv = {v:k for k,v in mapping.items()}
+                        self.core.vertex_categorical_mappings[prop] = {
+                            'str_to_int': mapping,
+                            'int_to_str': inv
+                        }
+
+                    # ensure the vp exists and assign
                     if prop not in self.core.graph.vp:
                         self.core.graph.vp[prop] = self.core.graph.new_vertex_property('int')
-                    self.core.graph.vp[prop].a[start:] = mapped
+                    self.core.graph.vp[prop].a[start:] = np.array(mapped, dtype=int)
+
 
     def add_edges_from_dataframe(
         self,
@@ -310,6 +338,12 @@ class OnionNetBuilder:
         # if there are literally no rows to add, bail out immediately
         if df_edges.shape[0] == 0:
             return
+        # check for column name conflicts with internal keys
+        internal = {'e_id','source','target'}  
+        if property_cols:
+            collision = set(property_cols) & internal
+            if collision:
+                raise ValueError(f"Cannot use {collision!r} as property name, it's reserved for internal keys")
         # prop-col existence
         if property_cols:
             missing = set(property_cols) - set(df_edges.columns)
@@ -370,25 +404,45 @@ class OnionNetBuilder:
                 vals = df.iloc[valid][prop].values
                 typ = property_types.get(prop) if property_types and prop in property_types else infer_property_type(df[prop])
                 if typ in ['int','float'] and not string_override:
+                    # numeric, existing code untouched
                     if prop not in self.core.graph.ep:
                         self.core.graph.ep[prop] = self.core.graph.new_edge_property(typ)
                     prop_vals.append(vals)
                     prop_maps.append(self.core.graph.ep[prop])
                 else:
-                    mapped, mapping = map_categorical_property(prop, vals)
-                    self.core.edge_categorical_mappings[prop] = {
-                        'str_to_int': mapping,
-                        'int_to_str': {v:k for k,v in mapping.items()}
-                    }
+                    # —— begin categorical extension logic —— #
+                    if prop in self.core.edge_categorical_mappings:
+                        cmap = self.core.edge_categorical_mappings[prop]['str_to_int']
+                        inv  = self.core.edge_categorical_mappings[prop]['int_to_str']
+                        mapped = []
+                        for v in vals:
+                            if v not in cmap:
+                                code = max(cmap.values(), default=-1) + 1
+                                cmap[v]   = code
+                                inv[code] = v
+                            mapped.append(cmap[v])
+                    else:
+                        mapped, mapping = map_categorical_property(prop, vals)
+                        inv = {v: k for k,v in mapping.items()}
+                        self.core.edge_categorical_mappings[prop] = {
+                            'str_to_int': mapping,
+                            'int_to_str': inv
+                        }
+
+                    # make sure the edge‐property exists as an int property
                     if prop not in self.core.graph.ep:
                         self.core.graph.ep[prop] = self.core.graph.new_edge_property('int')
-                    prop_vals.append(mapped)
+
+                    prop_vals.append(np.array(mapped, dtype=int))
                     prop_maps.append(self.core.graph.ep[prop])
-        # add edges
+
+        # now actually add into the graph
         if prop_vals:
+            # stack the (src,tgt) with each prop‐column’s values
             arr = np.column_stack((edge_arr, *prop_vals))
             self.core.graph.add_edge_list(arr, eprops=prop_maps)
         else:
+            # no extra properties → just add the bare edges
             self.core.graph.add_edge_list(edge_arr)
 
 

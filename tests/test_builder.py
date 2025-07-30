@@ -432,3 +432,165 @@ def test_bulk_ingest_random_noise(builder_and_core):
     for e in core.graph.edges():
         assert e.source() in core.vertex_index_to_custom_id
         assert e.target() in core.vertex_index_to_custom_id
+
+
+# 20) Missing vertex properties (NaNs) should end up as NaN in vp and still map categoricals consistently.
+def test_vertex_props_with_nans(builder_and_core):
+    bldr, core = builder_and_core
+    df = pd.DataFrame({
+        "node_id": ["A", "B", "C"],
+        "layer":   ["0", "0", "0"],
+        "p1":      [1.0, np.nan, 3.0],
+        "p2":      ["x", None, "y"]
+    })
+    bldr.add_vertices_from_dataframe(df, "node_id","layer",
+                                     property_cols=["p1","p2"],
+                                     drop_na=False)
+    # numeric nan preserved
+    arr1 = core.graph.vp["p1"].a
+    assert np.isnan(arr1[1])
+    # categorical None got its own code
+    codes = core.graph.vp["p2"].a
+    mapping = core.vertex_categorical_mappings["p2"]["int_to_str"]
+    assert mapping[codes[1]] is None
+    # original non-null map correctly
+    assert mapping[codes[0]] == "x"
+    assert mapping[codes[2]] == "y"
+
+# 21) Edge properties with NaNs carry through when drop_na=False (note drop_na only for the keys anyway)
+def test_edge_props_with_nans(builder_and_core, toy_nodes):
+    bldr, core = builder_and_core
+    # seed nodes
+    bldr.add_vertices_from_dataframe(toy_nodes, "node_id","layer", drop_na=False)
+    df = pd.DataFrame({
+        "source_id":    ["A","B","C"],
+        "source_layer": ["0","0","1"],
+        "target_id":    ["B","C","A"],
+        "target_layer": ["0","1","0"],
+        "w":            [10.0, np.nan, 30.0]
+    })
+    bldr.add_edges_from_dataframe(df,
+        source_id_col="source_id", source_layer_col="source_layer",
+        target_id_col="target_id", target_layer_col="target_layer",
+        property_cols=["w"], drop_na=False
+    )
+    ep = core.graph.ep["w"].a
+    # ensure the nan surfaces
+    assert np.isnan(ep[1])
+
+# 22) Vertex category mapping must be stable when re-growing with new categories
+def test_categorical_mapping_extends_not_restarts(builder_and_core):
+    bldr, core = builder_and_core
+    df1 = pd.DataFrame({
+        "node_id":["A","B"], "layer":["0","0"], "cat":["x","y"]
+    })
+    bldr.add_vertices_from_dataframe(df1, "node_id","layer",
+                                     property_cols=["cat"], drop_na=False)
+    # remember original mapping
+    orig = dict(core.vertex_categorical_mappings["cat"]["str_to_int"])
+
+    # now add a new vertex with a new category "z"
+    df2 = pd.DataFrame({
+        "node_id":["C"], "layer":["0"], "cat":["z"]
+    })
+    bldr.add_vertices_from_dataframe(df2, "node_id","layer",
+                                     property_cols=["cat"], drop_na=False)
+    newmap = core.vertex_categorical_mappings["cat"]["str_to_int"]
+    # existing x,y codes unchanged
+    assert newmap["x"] == orig["x"]
+    assert newmap["y"] == orig["y"]
+    # new code for 'z' added
+    assert "z" in newmap and newmap["z"] not in (orig["x"], orig["y"])
+
+# 23) Vertex Property-name collision with internal vp keys should raise
+def test_property_name_collision_with_internal(builder_and_core, toy_nodes):
+    bldr, core = builder_and_core
+    # 'layer_hash' is used internally
+    df = toy_nodes.copy()
+    df["layer_hash"] = [0,1,2]
+    with pytest.raises(ValueError):
+        bldr.add_vertices_from_dataframe(df, "node_id","layer",
+                                         property_cols=["layer_hash"],
+                                         drop_na=False)
+
+# 23) Edge Property-name collision with internal ep keys should raise
+def test_edge_property_name_collision_with_internal(builder_and_core, toy_nodes):
+    bldr, core = builder_and_core
+    # seed the nodes
+    bldr.add_vertices_from_dataframe(toy_nodes, "node_id","layer", drop_na=False)
+
+    df = pd.DataFrame({
+        "source_id":    ["A","B"],
+        "source_layer": ["0","0"],
+        "target_id":    ["B","C"],
+        "target_layer": ["0","1"],
+        "e_id":           [0,1],
+    })
+    with pytest.raises(ValueError):
+        bldr.add_edges_from_dataframe(
+            df,
+            source_id_col="source_id", source_layer_col="source_layer",
+            target_id_col="target_id", target_layer_col="target_layer",
+            property_cols=["e_id"], drop_na=False
+        )
+
+        
+# 22) Edge‐side category mapping must extend, not restart, when you re‐grow with new categories
+def test_edge_categorical_mapping_extends_not_restarts(builder_and_core, toy_nodes):
+    bldr, core = builder_and_core
+    # first seed the nodes
+    bldr.add_vertices_from_dataframe(toy_nodes, "node_id", "layer", drop_na=False)
+
+    # 1) ingest two edges with categories "x","y"
+    df1 = pd.DataFrame({
+        "source_id":     ["A","B"],
+        "source_layer":  ["0","0"],
+        "target_id":     ["B","C"],
+        "target_layer":  ["0","1"],
+        "cat":           ["x","y"],
+    })
+    bldr.add_edges_from_dataframe(df1,
+        source_id_col="source_id", source_layer_col="source_layer",
+        target_id_col="target_id", target_layer_col="target_layer",
+        property_cols=["cat"], drop_na=False
+    )
+    orig = dict(core.edge_categorical_mappings["cat"]["str_to_int"])
+
+    # 2) now add one more edge with a new category "z"
+    df2 = pd.DataFrame({
+        "source_id":     ["C"],
+        "source_layer":  ["1"],
+        "target_id":     ["A"],
+        "target_layer":  ["0"],
+        "cat":           ["z"],
+    })
+    bldr.add_edges_from_dataframe(df2,
+        source_id_col="source_id", source_layer_col="source_layer",
+        target_id_col="target_id", target_layer_col="target_layer",
+        property_cols=["cat"], drop_na=False
+    )
+    newmap = core.edge_categorical_mappings["cat"]["str_to_int"]
+
+    # existing codes must be unchanged...
+    assert newmap["x"] == orig["x"]
+    assert newmap["y"] == orig["y"]
+    # ...and the new category got its own fresh code
+    assert "z" in newmap and newmap["z"] not in (orig["x"], orig["y"])
+
+# 24) summary() reports the correct counts on a mixed run
+def test_summary_counts(builder_and_core, toy_nodes, toy_edges):
+    bldr, core = builder_and_core
+    # purposely drop one node & one edge
+    n2 = pd.concat([ toy_nodes, pd.DataFrame([{"node_id":None,"layer":"0"}]) ], ignore_index=True)
+    e2 = pd.concat([ toy_edges, pd.DataFrame([{
+        "source_id":"A","source_layer":"0","target_id":None,"target_layer":"0"
+    }]) ], ignore_index=True)
+    bldr.grow_onion(n2, e2,
+                   node_prop_cols=[], edge_prop_cols=[],
+                   drop_na=True, drop_duplicates=True, verbose=False)
+    s = bldr.summary()
+    # we dropped 1 node, dropped 1 edge invalid, final should be 3 nodes, 2 edges
+    assert "dropped_na=1" in s
+    assert "dropped_invalid=1" in s
+    assert "final=3" in s.splitlines()[0]  # first line
+    assert "final=2" in s.splitlines()[1]
