@@ -61,8 +61,8 @@ class OnionNetBuilder:
         Parameters:
             df_nodes (pd.DataFrame): DataFrame containing node information.
             df_edges (pd.DataFrame): DataFrame containing edge information.
-            node_prop_cols (List[str], optional): List of node property column names. Defaults to ['node_prop_1', 'node_prop_2'].
-            edge_prop_cols (List[str], optional): List of edge property column names. Defaults to ['edge_prop_1', 'edge_prop_2'].
+            node_prop_cols (List[str], optional): List of node property column names. Defaults to None.
+            edge_prop_cols (List[str], optional): List of edge property column names. Defaults to None.
             drop_na (bool, optional): Flag to drop rows with missing key values. Defaults to True.
             drop_duplicates (bool, optional): Flag to remove duplicate entries. Defaults to True.
             use_display (bool, optional): Flag to display a snippet of data using IPython display if available. Defaults to False.
@@ -79,8 +79,8 @@ class OnionNetBuilder:
             ValueError: If required columns are missing in the node or edge DataFrames.
         """
         # Use default property columns if none specified.
-        node_prop_cols = node_prop_cols or ['node_prop_1', 'node_prop_2']
-        edge_prop_cols = edge_prop_cols or ['edge_prop_1', 'edge_prop_2']
+        node_prop_cols = node_prop_cols or None
+        edge_prop_cols = edge_prop_cols or None
         
         # Validate required columns.
         missing_nodes = set([node_id_col, node_layer_col] + node_prop_cols) - set(df_nodes.columns)
@@ -110,8 +110,8 @@ class OnionNetBuilder:
                                       edge_target_id_col, edge_target_layer_col, edge_prop_cols, drop_na, property_types=edge_property_types)
 
     def add_vertices_from_dataframe(self, df_nodes: pd.DataFrame, id_col: str, layer_col: str,
-                                    property_cols: List[str] = None, drop_na: bool = True,
-                                    fill_na_with: Any = None, string_override: bool = False, property_types: dict = None) -> None:
+                                    property_cols: List[str] = None, drop_na: bool = False,
+                                    string_override: bool = False, property_types: dict = None) -> None:
         """
         Add vertices to the graph from a DataFrame containing node information.
         
@@ -123,20 +123,27 @@ class OnionNetBuilder:
             id_col (str): Name of the column containing node identifiers.
             layer_col (str): Name of the column containing node layer information.
             property_cols (List[str], optional): List of additional node property columns to be added. Defaults to None.
-            drop_na (bool, optional): Flag to drop rows with missing id or layer values. Defaults to True.
-            fill_na_with (Any, optional): Value to fill in for missing values if drop_na is False. Defaults to None.
+            drop_na (bool, optional): Flag to drop rows with missing id or layer values (not properties). Defaults to False.
             string_override (bool, optional): Flag to force treating property values as strings. Defaults to False.
             property_types (dict, optional): Mapping of node property types. Defaults to None.
         """
         df = df_nodes.copy()
+    
+        # after copying df and before any astype/casting, see if NAs are present and no drop_na setting provided:
+        if not drop_na:
+            mask_null = df[[id_col, layer_col]].isna().any(axis=1)
+            if mask_null.any():
+                raise ValueError(
+                    f"Detected NA in {id_col}/{layer_col} but drop_na=False; "
+                    "please set drop_na=True to drop missing rows or clean your data first."
+                )
+        # now do the existing drop_na=True branch:
+        if drop_na:
+            df = df.dropna(subset=[id_col, layer_col])
+
         # Enforce that id_col and layer_col are strings.
         df[id_col] = df[id_col].astype(str)
         df[layer_col] = df[layer_col].astype(str)
-    
-        if drop_na:
-            df = df.dropna(subset=[id_col, layer_col])
-        else:
-            df = df.fillna({id_col: fill_na_with, layer_col: fill_na_with})
         
         # Map layers and node IDs.
         df['layer_int'] = df[layer_col].apply(self.core._map_layer)
@@ -177,7 +184,7 @@ class OnionNetBuilder:
 
     def add_edges_from_dataframe(self, df_edges: pd.DataFrame, source_id_col: str, source_layer_col: str,
                                  target_id_col: str, target_layer_col: str, property_cols: List[str] = None,
-                                 drop_na: bool = True, fill_na_with: Any = None, string_override: bool = False, property_types: dict = None) -> None:
+                                 drop_na: bool = False, string_override: bool = False, property_types: dict = None) -> None:
         """
         Add edges to the graph from a DataFrame containing edge information.
         
@@ -191,23 +198,34 @@ class OnionNetBuilder:
             target_id_col (str): Name of the column for the target node identifier.
             target_layer_col (str): Name of the column for the target node layer.
             property_cols (List[str], optional): List of additional edge property columns to be added. Defaults to None.
-            drop_na (bool, optional): Flag to drop rows with missing values in key columns. Defaults to True.
-            fill_na_with (Any, optional): Value to fill in for missing values if drop_na is False. Defaults to None.
+            drop_na (bool, optional): Flag to drop rows with missing values in key columns (i.e. source and target node ids or layers, not properties). Defaults to False.
             string_override (bool, optional): Flag to force treating property values as strings. Defaults to False.
             property_types (dict, optional): Mapping of edge property types. Defaults to None.
         """
         df = df_edges.copy()
+
+        # Fail fast if there are NAs in any of the 4 key columns and drop_na=False
+        if not drop_na:
+            key_cols = [source_id_col, source_layer_col,
+                        target_id_col, target_layer_col]
+            mask_null = df[key_cols].isna().any(axis=1)
+            if mask_null.any():
+                raise ValueError(
+                    f"Detected NA in edge keys {key_cols} but drop_na=False; "
+                    "please set drop_na=True to drop missing rows or clean your data first."
+                )
+
+        # If drop_na=True, remove those rows up front
+        if drop_na:
+            df = df.dropna(subset=[source_id_col, source_layer_col, target_id_col, target_layer_col])
+
         # Enforce that id_col and layer_col are strings.
         df[source_id_col] = df[source_id_col].astype(str)
         df[source_layer_col] = df[source_layer_col].astype(str)
         df[target_id_col] = df[target_id_col].astype(str)
         df[target_layer_col] = df[target_layer_col].astype(str)
 
-        if drop_na:
-            df = df.dropna(subset=[source_id_col, source_layer_col, target_id_col, target_layer_col])
-        else:
-            df = df.fillna({source_id_col: fill_na_with, source_layer_col: fill_na_with,
-                            target_id_col: fill_na_with, target_layer_col: fill_na_with})
+        
         
         df['source_layer_int'] = df[source_layer_col].apply(self.core._map_layer)
         df['source_id_int'] = df[source_id_col].apply(self.core._map_node_id)
