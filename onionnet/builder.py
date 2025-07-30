@@ -144,7 +144,7 @@ class OnionNetBuilder:
                 )
         # Drop missing rows if the user asked for it
         if drop_na:
-            df = df.dropna(subset=[key_cols])
+            df = df.dropna(subset=key_cols)
 
         # Enforce that id_col and layer_col are strings.
         df[id_col] = df[id_col].astype(str)
@@ -220,7 +220,7 @@ class OnionNetBuilder:
                 )
         # Drop missing rows if the user asked for it
         if drop_na:
-            df = df.dropna(subset=[key_cols])
+            df = df.dropna(subset=key_cols)
 
         # Enforce that id_col and layer_col are strings.
         df[source_id_col] = df[source_id_col].astype(str)
