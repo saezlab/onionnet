@@ -131,6 +131,10 @@ class OnionNetBuilder:
             string_override (bool, optional): Flag to force treating property values as strings. Defaults to False.
             property_types (dict, optional): Mapping of node property types. Defaults to None.
         """
+        if property_cols:
+            missing = set(property_cols) - set(df_nodes.columns)
+            if missing:
+                raise ValueError(f"Property columns not found in nodes DataFrame: {missing}")
         df = df_nodes.copy()
     
         # Fail-fast on missing keys when drop_na=False
@@ -207,6 +211,10 @@ class OnionNetBuilder:
             string_override (bool, optional): Flag to force treating property values as strings. Defaults to False.
             property_types (dict, optional): Mapping of edge property types. Defaults to None.
         """
+        if property_cols:
+            missing = set(property_cols) - set(df_edges.columns)
+            if missing:
+                raise ValueError(f"Property columns not found in edges DataFrame: {missing}")
         df = df_edges.copy()
 
         # Fail-fast on missing keys when drop_na=False
