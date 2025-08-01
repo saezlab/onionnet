@@ -768,3 +768,309 @@ def test_large_scale_near_collision_invariants(builder_and_core):
     for e in core.graph.edges():
         assert e.source() in core.vertex_index_to_custom_id
         assert e.target() in core.vertex_index_to_custom_id
+
+
+def test_edges_before_vertices_do_not_create_them(builder_and_core):
+    # Edges referencing missing vertices should not create vertices; only appear when endpoints exist.
+    bldr, core = builder_and_core
+    # attempt to add edge A->B before any vertices exist
+    df_e = pd.DataFrame({
+        "source_id": ["A"],
+        "source_layer": ["0"],
+        "target_id": ["B"],
+        "target_layer": ["0"],
+        "strength": [5]
+    })
+    bldr.add_edges_from_dataframe(df_e, "source_id", "source_layer", "target_id", "target_layer",
+                                  property_cols=["strength"], drop_na=False)
+    assert core.graph.num_edges() == 0  # nothing added
+    # add only A
+    bldr.add_vertices_from_dataframe(pd.DataFrame({"node_id":["A"],"layer":["0"]}), "node_id", "layer", drop_na=False)
+    bldr.add_edges_from_dataframe(df_e, "source_id", "source_layer", "target_id", "target_layer",
+                                  property_cols=["strength"], drop_na=False)
+    assert core.graph.num_edges() == 0  # still cannot add, B missing
+    # add B and now edge should appear
+    bldr.add_vertices_from_dataframe(pd.DataFrame({"node_id":["B"],"layer":["0"]}), "node_id", "layer", drop_na=False)
+    bldr.add_edges_from_dataframe(df_e, "source_id", "source_layer", "target_id", "target_layer",
+                                  property_cols=["strength"], drop_na=False)
+    assert core.graph.num_edges() == 1
+
+
+def test_edge_deduplication_with_and_without_props_considered(builder_and_core):
+    # If consider_props_in_duplicate=True, edges with same endpoints but different prop values survive separately;
+    # otherwise they collapse.
+    bldr, core = builder_and_core
+    # seed endpoints A,B
+    bldr.add_vertices_from_dataframe(
+        pd.DataFrame({"node_id":["A","B"],"layer":["0","0"]}),
+        "node_id","layer", drop_na=False
+    )
+    # create 10 A->B edges with property 'p' varying
+    edge_rows = []
+    for i in range(10):
+        edge_rows.append({
+            "source_id": "A", "source_layer": "0",
+            "target_id": "B", "target_layer": "0",
+            "p": i
+        })
+    df = pd.DataFrame(edge_rows)
+    # with props considered: expect 10 edges
+    bldr.add_edges_from_dataframe(df, "source_id", "source_layer",
+                                  "target_id", "target_layer",
+                                  property_cols=["p"], drop_na=False,
+                                  consider_props_in_duplicate=True)
+    assert core.graph.num_edges() == 10
+    # cleanup and re-add without considering props: expect collapse to 1 edge (dedup)
+    # reset graph
+    core = OnionNetGraph()
+    bldr = OnionNetBuilder(core)
+    bldr.add_vertices_from_dataframe(
+        pd.DataFrame({"node_id":["A","B"],"layer":["0","0"]}),
+        "node_id","layer", drop_na=False
+    )
+    bldr.add_edges_from_dataframe(df, "source_id", "source_layer",
+                                  "target_id", "target_layer",
+                                  property_cols=["p"], drop_na=False,
+                                  consider_props_in_duplicate=False)
+    assert core.graph.num_edges() == 1
+
+
+def test_edge_roundtrip_categorical_mapping(pm_and_graph_simple):
+    # Decode edge categorical prop and re-encode; should recover original integer codes.
+    core, pm = pm_and_graph_simple
+    pm.decode_property_labels('e', 'lbl', new_prop_name='lbl_decoded')
+    decoded_vals = [core.graph.ep['lbl_decoded'][e] for e in core.graph.edges()]
+    # build reverse map (string -> code) from original str_to_int
+    str_to_int = core.edge_categorical_mappings['lbl']['str_to_int']
+    reencoded = [str_to_int[val] for val in decoded_vals]
+    original_codes = [core.graph.ep['lbl'][e] for e in core.graph.edges()]
+    assert reencoded == original_codes
+
+
+def test_bulk_decode_idempotent(pm_and_graph_simple):
+    # Running bulk decode twice should not change the decoded property after the first run.
+    core, pm = pm_and_graph_simple
+    df = pd.DataFrame({
+        "grp": ["x", "y", "x"]
+    })
+    pm.decode_property_labels_bulk(df, encoded_prop_type='v')
+    first = [core.graph.vp['grp_decoded'][v] for v in core.graph.vertices()]
+    pm.decode_property_labels_bulk(df, encoded_prop_type='v')
+    second = [core.graph.vp['grp_decoded'][v] for v in core.graph.vertices()]
+    assert first == second
+
+
+def test_whitespace_layer_current_behavior(builder_and_core):
+    # Current behavior: layers with different whitespace are treated as distinct (no normalization).
+    bldr, core = builder_and_core
+    df = pd.DataFrame({
+        "node_id": ["X", "Y", "Z"],
+        "layer": ["1", " 1", "1 "]
+    })
+    bldr.add_vertices_from_dataframe(df, "node_id", "layer", drop_na=False)
+    codes = {core._map_layer(l) for l in ["1", " 1", "1 "]}
+    # expect distinct because no trimming is implemented yet
+    assert len(codes) == 3
+
+
+def test_summary_invariants_complex(builder_and_core):
+    # Combined scenario: duplicates, NAs, invalid edges; summary metrics should satisfy arithmetic invariants.
+    bldr, core = builder_and_core
+    # Nodes: include one NA, one duplicate
+    df_nodes = pd.DataFrame({
+        "node_id": ["A", "A", None],
+        "layer": ["0", "0", "1"]
+    })
+    # Edges: some invalid (missing endpoints), duplicates
+    df_edges = pd.DataFrame({
+        "source_id":    ["A", "A", "X"],
+        "source_layer": ["0", "0", "0"],
+        "target_id":    ["A", "A", "0"],  # "0" is missing node
+        "target_layer": ["0", "0", "0"],
+    })
+    bldr.grow_onion(df_nodes, df_edges,
+                   node_prop_cols=[], edge_prop_cols=[],
+                   drop_na=True, drop_duplicates=True, verbose=False)
+    summary = bldr.summary()
+    # parse counts
+    def parse_line(line):
+        parts = {k: int(v) for k, v in
+                 [p.split("=", 1) for p in line.replace(" → ", ",").split(", ")]}
+        return parts
+    node_line, edge_line = summary.splitlines()
+    n = parse_line(node_line)
+    e = parse_line(edge_line)
+    # invariants: in - dropped_na - deduped == final
+    assert n["in"] - n["dropped_na"] - n["deduped"] == n["final"]
+    assert e["in"] - e["dropped_invalid"] - e["deduped"] == e["final"]
+
+
+def test_vertex_property_type_conflict_reverse(builder_and_core):
+    # Ingest a vertex property as categorical (string_override), then try to ingest it as numeric; should error.
+    bldr, core = builder_and_core
+    df = pd.DataFrame({
+        "node_id": ["A"],
+        "layer": ["0"],
+        "foo": ["bar"]
+    })
+    # first ingest as categorical
+    bldr.add_vertices_from_dataframe(df, "node_id", "layer",
+                                     property_cols=["foo"], drop_na=False, string_override=True)
+    # now attempt to ingest again as numeric explicitly
+    with pytest.raises(ValueError):
+        bldr.add_vertices_from_dataframe(df, "node_id", "layer",
+                                         property_cols=["foo"], drop_na=False,
+                                         property_types={"foo": "int"})
+
+
+def test_decode_vertex_and_edge_same_name_separation(builder_and_core):
+    # Ensure vertex/edge decode with same base prop name do not collide in namespace.
+    bldr, core = builder_and_core
+    # seed vertex and edge both with categorical "label"
+    df_nodes = pd.DataFrame({
+        "node_id": ["A", "B"],
+        "layer": ["0", "0"],
+        "label": ["u", "v"]
+    })
+    bldr.add_vertices_from_dataframe(df_nodes, "node_id", "layer",
+                                     property_cols=["label"], drop_na=False)
+    df_edges = pd.DataFrame({
+        "source_id": ["A"],
+        "source_layer": ["0"],
+        "target_id": ["B"],
+        "target_layer": ["0"],
+        "label": ["w"]
+    })
+    bldr.add_edges_from_dataframe(
+        df_edges,
+        source_id_col="source_id", source_layer_col="source_layer",
+        target_id_col="target_id", target_layer_col="target_layer",
+        property_cols=["label"], drop_na=False
+    )
+    pm = OnionNetPropertyManager(core)
+    pm.decode_property_labels('v', 'label', new_prop_name='label_decoded')
+    pm.decode_property_labels('e', 'label', new_prop_name='label_decoded')
+    assert 'label_decoded' in core.graph.vp
+    assert 'label_decoded' in core.graph.ep
+    # vertex and edge decoded values differ appropriately
+    v_vals = [core.graph.vp['label_decoded'][v] for v in core.graph.vertices()]
+    e_vals = [core.graph.ep['label_decoded'][e] for e in core.graph.edges()]
+    assert any(isinstance(x, str) for x in v_vals)
+    assert any(isinstance(x, str) for x in e_vals)
+
+
+def test_high_cardinality_edge_decode(builder_and_core):
+    # Stress test: many edges with unique categorical labels get decoded correctly.
+    bldr, core = builder_and_core
+    # seed two vertices
+    bldr.add_vertices_from_dataframe(
+        pd.DataFrame({"node_id":["A","B"],"layer":["0","0"]}),
+        "node_id","layer", drop_na=False
+    )
+    N = 3_000 #tested up to 300_000 previously
+    labels = [f"lbl_{i}" for i in range(N)]
+    edge_rows = []
+    for i, lbl in enumerate(labels):
+        edge_rows.append({
+            "source_id": "A", "source_layer": "0",
+            "target_id": "B", "target_layer": "0",
+            "huge_lbl": lbl
+        })
+    df = pd.DataFrame(edge_rows)
+    bldr.add_edges_from_dataframe(
+        df,
+        source_id_col="source_id", source_layer_col="source_layer",
+        target_id_col="target_id", target_layer_col="target_layer",
+        property_cols=["huge_lbl"], drop_na=False,
+        consider_props_in_duplicate=True
+    )
+    pm = OnionNetPropertyManager(core)
+    pm.decode_property_labels('e', 'huge_lbl', new_prop_name='huge_lbl_decoded')
+    decoded = {core.graph.ep['huge_lbl_decoded'][e] for e in core.graph.edges()}
+    assert len({d for d in decoded if isinstance(d, str) and d.startswith("lbl_")}) >= N
+
+
+def test_edge_decode_mapping_mutation(pm_and_graph_simple):
+    # Mutate edge categorical mapping between decodes to ensure two decoded props differ.
+    core, pm = pm_and_graph_simple
+    pm.decode_property_labels('e', 'lbl', new_prop_name='lbl_decoded')
+    # change mapping for 'foo'
+    foo_code = core.edge_categorical_mappings['lbl']['str_to_int']['foo']
+    core.edge_categorical_mappings['lbl']['int_to_str'][foo_code] = "Z"
+    pm.decode_property_labels('e', 'lbl', new_prop_name='lbl_decoded2')
+    first = [core.graph.ep['lbl_decoded'][e] for e in core.graph.edges()]
+    second = [core.graph.ep['lbl_decoded2'][e] for e in core.graph.edges()]
+    assert first != second
+
+
+def test_bulk_decode_invalid_encoded_prop_type_raises(pm_and_graph_simple):
+    # Passing invalid encoded_prop_type to bulk decode should error early.
+    core, pm = pm_and_graph_simple
+    df = pd.DataFrame({"grp": ["x", "y", "x"]})
+    with pytest.raises(ValueError):
+        pm.decode_property_labels_bulk(df, encoded_prop_type='z')
+
+
+def test_decode_overwrite_after_deletion(pm_and_graph_simple):
+    # If a decoded property is deleted manually, re-running decode recreates it correctly.
+    core, pm = pm_and_graph_simple
+    pm.decode_property_labels('v', 'grp', new_prop_name='grp_decoded')
+    assert 'grp_decoded' in core.graph.vp
+    # delete and verify it's gone
+    del core.graph.vp['grp_decoded']
+    assert 'grp_decoded' not in core.graph.vp
+    # re-run decode
+    pm.decode_property_labels('v', 'grp', new_prop_name='grp_decoded')
+    assert 'grp_decoded' in core.graph.vp
+
+
+def test_default_label_none_fallback(pm_and_graph_simple):
+    # Use default_label=None and ensure it becomes a stringified "None" in decoded output.
+    core, pm = pm_and_graph_simple
+    # remove "y" from mapping to force default usage
+    y_code = core.vertex_categorical_mappings["grp"]["str_to_int"]["y"]
+    int_to_str = core.vertex_categorical_mappings["grp"]["int_to_str"]
+    core.vertex_categorical_mappings["grp"]["int_to_str"] = {k: v for k, v in int_to_str.items() if k != y_code}
+    pm.decode_property_labels('v', 'grp', default_label=None, new_prop_name='grp_default_none')
+    decoded = [core.graph.vp['grp_default_none'][v] for v in core.graph.vertices()]
+    # Expect at least one "None" string because of vectorize otypes=str
+    assert "None" in decoded
+
+
+def test_decode_with_extra_keys_in_mapping(pm_and_graph_simple):
+    # Provide a mapping dict with unused (extra) keys; decoding should succeed and ignore extras.
+    core, pm = pm_and_graph_simple
+    # create custom map with extra dummy code
+    base_map = core.vertex_categorical_mappings["grp"]["str_to_int"]
+    inverse = {v: k for k, v in base_map.items()}
+    # add extraneous code 999 mapping to "dummy"
+    custom_map = {**inverse, 999: "dummy"}
+    pm.decode_property_labels('v', 'grp', mapping_dict=custom_map, new_prop_name='grp_extra_keys')
+    decoded = [core.graph.vp['grp_extra_keys'][v] for v in core.graph.vertices()]
+    # Should contain proper labels and not fail due to extra key
+    assert any(d in {"x", "y"} for d in decoded)
+
+
+def test_edge_summary_and_property_alignment_after_invalid_filtering(builder_and_core):
+    # After filtering invalid edges, verify properties align and duplicates controlled when consider_props_in_duplicate=True.
+    bldr, core = builder_and_core
+    # only seed A and B
+    bldr.add_vertices_from_dataframe(
+        pd.DataFrame({"node_id":["A","B"],"layer":["0","0"]}),
+        "node_id","layer", drop_na=False
+    )
+    # include one invalid edge (C missing) and duplicate with different strength
+    df_e = pd.DataFrame({
+        "source_id":    ["A","C","A"],
+        "source_layer": ["0","0","0"],
+        "target_id":    ["B","B","B"],
+        "target_layer": ["0","0","0"],
+        "strength":     [100,200,300]
+    })
+    bldr.add_edges_from_dataframe(df_e, "source_id","source_layer", "target_id","target_layer",
+                                  property_cols=["strength"], drop_na=False,
+                                  consider_props_in_duplicate=True)
+    # Expect two surviving A->B edges with strengths 100 and 300
+    assert core.graph.num_edges() == 2
+    strengths = sorted(core.graph.ep["strength"].a.tolist())
+    assert strengths == [100, 300]
