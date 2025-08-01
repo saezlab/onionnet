@@ -72,6 +72,32 @@ def pm_and_graph_mixed():
     return core, pm
 
 
+@pytest.fixture
+def builder_and_core():
+    core = OnionNetGraph()
+    builder = OnionNetBuilder(core)
+    return builder, core
+
+
+@pytest.fixture
+def toy_nodes():
+    return pd.DataFrame({
+        "node_id": ["A","B","C"],
+        "layer":   ["0","0","1"],
+        "weight":  [1.5,2.0,3.5],
+        "group":   ["x","y","x"]
+    })
+
+@pytest.fixture
+def toy_edges():
+    return pd.DataFrame({
+        "source_id":    ["A","B"],
+        "source_layer": ["0","0"],
+        "target_id":    ["B","C"],
+        "target_layer": ["0","1"],
+        "strength":     [10,20]
+    })
+
 # --- Tests for simple fixture ---------------------------------------------
 
 def test_decode_vertex_property_labels_default(pm_and_graph_simple):
@@ -389,3 +415,163 @@ def test_decode_overwrites_existing(pm_and_graph_simple):
     decoded = [core.graph.vp['grp_decoded'][v] for v in core.graph.vertices()]
     assert "OVERRIDE" not in decoded
 
+
+# --- Fixtures reused or slightly extended for edge tests -------------------
+
+@pytest.fixture
+def pm_and_graph_edge_extra():
+    """
+    Build a graph with one categorical edge property 'lbl' and one numeric edge property 'w'.
+    This lets us test decoding and skipping of numeric vs object edge props.
+    """
+    core = OnionNetGraph()
+    bldr = OnionNetBuilder(core)
+    # seed vertices so edges have valid endpoints
+    df_nodes = pd.DataFrame({
+        "node_id": ["A", "B", "C"],
+        "layer":   ["0", "0", "0"]
+    })
+    bldr.add_vertices_from_dataframe(df_nodes, "node_id", "layer", property_cols=None, drop_na=False)
+
+    # seed edges with a categorical 'lbl' and numeric 'w'
+    df_edges = pd.DataFrame({
+        "source_id":    ["A", "B", "C"],
+        "source_layer": ["0", "0", "0"],
+        "target_id":    ["B", "C", "A"],
+        "target_layer": ["0", "0", "0"],
+        "lbl":          ["foo", "bar", "baz"],
+        "w":            [1.0, 2.0, 3.0]
+    })
+    bldr.add_edges_from_dataframe(df_edges,
+        source_id_col="source_id", source_layer_col="source_layer",
+        target_id_col="target_id", target_layer_col="target_layer",
+        property_cols=["lbl", "w"], drop_na=False)
+
+    pm = OnionNetPropertyManager(core)
+    return core, pm
+
+
+# --- Additional edge-specific tests ---------------------------------------
+
+def test_decode_edge_property_labels_default(pm_and_graph_simple):
+    # Ensure that decoding an existing categorical edge property without overrides produces *_decoded
+    core, pm = pm_and_graph_simple
+    pm.decode_property_labels('e', 'lbl')  # default decoding
+    assert 'lbl_decoded' in core.graph.ep
+    decoded = [core.graph.ep['lbl_decoded'][e] for e in core.graph.edges()]
+    # original labels should appear (foo, bar)
+    assert set(decoded) >= {"foo", "bar"}
+
+
+def test_decode_edge_missing_codes_default_label(pm_and_graph_simple):
+    # If the mapping lacks some codes, they should fall back to default_label
+    core, pm = pm_and_graph_simple
+    # remove 'bar' from mapping so its code maps to default
+    int_to_str = core.edge_categorical_mappings["lbl"]["int_to_str"]
+    # find code for 'bar' via reverse lookup
+    str_to_int = core.edge_categorical_mappings["lbl"]["str_to_int"]
+    bar_code = str_to_int["bar"]
+    core.edge_categorical_mappings["lbl"]["int_to_str"] = {k: v for k, v in int_to_str.items() if k != bar_code}
+    pm.decode_property_labels('e', 'lbl', new_prop_name="lbl2", default_label="UNKNOWN")
+    decoded = [core.graph.ep["lbl2"][e] for e in core.graph.edges()]
+    # Expect at least one "UNKNOWN" because 'bar' was dropped
+    assert "UNKNOWN" in decoded
+
+
+def test_decode_edge_wrong_dimension_error(pm_and_graph_simple):
+    # Trying to decode an edge property as a vertex property should raise a clear error
+    core, pm = pm_and_graph_simple
+    df = pd.DataFrame({"lbl": ["foo", "bar", "baz"]})
+    # Because 'lbl' exists only as an edge prop, decoding it as vertex should either KeyError or ValueError;
+    # we expect the implementation to catch dimension mismatch and raise ValueError.
+    with pytest.raises((ValueError, KeyError)):
+        pm.decode_property_labels('v', 'lbl')
+
+
+def test_bulk_decode_edge_props_and_skip_vertex(pm_and_graph_edge_extra, capsys):
+    # Bulk decode on edges: object-type 'lbl' should be decoded, numeric 'w' skipped
+    core, pm = pm_and_graph_edge_extra
+    df = pd.DataFrame({
+        "lbl": ["foo", "bar", "baz"],
+        "w":   [1.0, 2.0, 3.0]
+    })
+    pm.decode_property_labels_bulk(df, encoded_prop_type='e')
+    out = capsys.readouterr().out
+    assert "w prop left as is" in out  # numeric skip message
+    assert "lbl_decoded" in core.graph.ep
+    vals = [core.graph.ep["lbl_decoded"][e] for e in core.graph.edges()]
+    assert set(vals) == {"foo", "bar", "baz"}
+
+
+def test_bulk_decode_missing_encoded_edge_prop_raises(pm_and_graph_edge_extra):
+    # If the DataFrame refers to an edge property that doesn't exist on the graph,
+    # bulk decoding should surface an error for that missing encoded property.
+    core, pm = pm_and_graph_edge_extra
+    df = pd.DataFrame({"unknown": ["a", "b", "c"]})
+    with pytest.raises((KeyError, ValueError)):
+        pm.decode_property_labels_bulk(df, encoded_prop_type='e')
+
+
+def test_decode_edge_override_mapping_and_defaults(pm_and_graph_simple):
+    # Provide a custom mapping that only maps one code; others should use default
+    core, pm = pm_and_graph_simple
+    # Determine original codes
+    str_to_int = core.edge_categorical_mappings["lbl"]["str_to_int"]
+    foo_code = str_to_int["foo"]
+    custom_map = {foo_code: "F"}  # only 'foo' mapped
+    pm.decode_property_labels(
+        encoded_prop_type='e',
+        encoded_prop_name='lbl',
+        new_prop_name='lbl_custom',
+        mapping_dict=custom_map,
+        default_label="OTHER"
+    )
+    decoded = [core.graph.ep["lbl_custom"][e] for e in core.graph.edges()]
+    # Must contain "F" for foo and "OTHER" for bar
+    assert "F" in decoded and "OTHER" in decoded
+
+
+def test_edge_property_type_conflict_reverse(builder_and_core, toy_nodes, toy_edges):
+    # Ingest strength as categorical first, then attempt to add it again as numeric: should error
+    bldr, core = builder_and_core
+    # seed vertices
+    bldr.add_vertices_from_dataframe(toy_nodes, "node_id", "layer", drop_na=False)
+    # first ingest strength as categorical (string_override True)
+    bldr.add_edges_from_dataframe(
+        toy_edges,
+        source_id_col="source_id", source_layer_col="source_layer",
+        target_id_col="target_id", target_layer_col="target_layer",
+        property_cols=["strength"], drop_na=False, string_override=True
+    )
+    # now attempt to ingest same property again as numeric explicitly
+    with pytest.raises(ValueError):
+        bldr.add_edges_from_dataframe(
+            toy_edges,
+            source_id_col="source_id", source_layer_col="source_layer",
+            target_id_col="target_id", target_layer_col="target_layer",
+            property_cols=["strength"], drop_na=False, property_types={"strength": "int"}
+        )
+
+
+def test_edge_extreme_numeric_properties_still_show(builder_and_core, toy_nodes):
+    # Edge numeric properties with extreme values (inf, -inf, nan) should propagate
+    bldr, core = builder_and_core
+    # seed nodes
+    bldr.add_vertices_from_dataframe(toy_nodes, "node_id", "layer", drop_na=False)
+    df = pd.DataFrame({
+        "source_id":    ["A", "A", "B"],
+        "source_layer": ["0", "0", "0"],
+        "target_id":    ["B", "C", "C"],
+        "target_layer": ["0", "1", "1"],
+        "w":            [np.inf, -np.inf, np.nan]
+    })
+    bldr.add_edges_from_dataframe(df,
+        source_id_col="source_id", source_layer_col="source_layer",
+        target_id_col="target_id", target_layer_col="target_layer",
+        property_cols=["w"], drop_na=False
+    )
+    ep = core.graph.ep["w"].a
+    # ensure extreme values are preserved in order
+    assert np.isposinf(ep[0])
+    assert np.isneginf(ep[1])
+    assert np.isnan(ep[2])
