@@ -575,3 +575,196 @@ def test_edge_extreme_numeric_properties_still_show(builder_and_core, toy_nodes)
     assert np.isposinf(ep[0])
     assert np.isneginf(ep[1])
     assert np.isnan(ep[2])
+
+
+#### Tests of possible Vertex-Edge mixup causes ####
+"""
+    Summary of failure modes to be guarded against here:
+    •	Normalization mismatches leading to unintended splits/merges of vertices.
+    •	Index misalignment when filtering invalid edges, causing wrong properties to stick to surviving edges.
+    •	Overwriting mappings on duplicate inserts that hide previously referenced vertices (edges still point to the old one).
+    •	Name collision confusion between vertex and edge properties sharing the same key.
+    •	Layer encoding errors that enable invalid cross-layer edges silently.
+    •	Directionality collapse if source/target are confused.
+    •	Scale-related statistical drift where rare malformed rows produce unexpected graph structure.
+"""
+
+
+def test_whitespace_id_splits_or_collapses(builder_and_core):
+    bldr, core = builder_and_core
+    # Three nodes that differ only by whitespace
+    df = pd.DataFrame({
+        "node_id": ["A", " A", "A "],
+        "layer": ["0", "0", "0"]
+    })
+    bldr.add_vertices_from_dataframe(df, "node_id", "layer", drop_na=False)
+    # If your system is meant to DE-duplicate by trimming, expect 1; otherwise 3
+    keys = set(core.custom_id_to_vertex_index.keys())
+    assert len(keys) in (1, 3)  # adapt to desired policy
+    # Create edges referencing different forms and make sure they attach to the expected vertex identities
+    edges = pd.DataFrame({
+        "source_id": ["A", " A", "A "],
+        "source_layer": ["0"]*3,
+        "target_id": ["A", "A", " A"],
+        "target_layer": ["0"]*3,
+        "strength": [1,2,3]
+    })
+    bldr.add_edges_from_dataframe(edges, "source_id","source_layer", "target_id","target_layer",
+                                 property_cols=["strength"], drop_na=False)
+    # All edges should exist and not unintentionally collapse if not desired
+    assert core.graph.num_edges() == 3
+
+
+def test_edge_property_alignment_after_invalid_filtering(builder_and_core):
+    # Edge with one invalid endpoint should be dropped, and properties for the kept ones remain correct.
+    bldr, core = builder_and_core
+    # seed only A and B
+    bldr.add_vertices_from_dataframe(
+        pd.DataFrame({"node_id":["A","B"],"layer":["0","0"]}),
+        "node_id","layer", drop_na=False
+    )
+    df_e = pd.DataFrame({
+        "source_id":    ["A","C","A"],  # 'C' is missing
+        "source_layer": ["0","0","0"],
+        "target_id":    ["B","B","B"],
+        "target_layer": ["0","0","0"],
+        "strength":     [100,200,300]
+    })
+    bldr.add_edges_from_dataframe(df_e, "source_id","source_layer", "target_id","target_layer",
+                                  property_cols=["strength"], drop_na=False, 
+                                  consider_props_in_duplicate=True)
+    # Only A->B edges (strength 100 and 300) should survive
+    assert core.graph.num_edges() == 2
+    strengths = sorted(core.graph.ep["strength"].a.tolist())
+    assert strengths == [100, 300]
+
+
+def test_duplicate_vertex_overwrite_preserves_existing_edges(builder_and_core):
+    bldr, core = builder_and_core
+    # initial A->B
+    nodes = pd.DataFrame({"node_id":["A","B"],"layer":["0","0"]})
+    edge = pd.DataFrame({
+        "source_id":["A"],"source_layer":["0"],
+        "target_id":["B"],"target_layer":["0"],
+        "p": [1]
+    })
+    bldr.grow_onion(nodes, edge, node_prop_cols=[], edge_prop_cols=["p"],
+                    drop_na=False, drop_duplicates=False)
+    # record original source vertex index (A)
+    original_idx = core.custom_id_to_vertex_index[(core._map_layer("0"), core._map_node_id("A"))]
+    # add duplicate A with extra property
+    dup_node = pd.DataFrame({"node_id":["A"],"layer":["0"], "newprop":[42]})
+    bldr.add_vertices_from_dataframe(dup_node, "node_id","layer", property_cols=["newprop"], drop_na=False, drop_duplicates=False)
+    # custom_id_to_vertex_index now maps to the new A
+    new_idx = core.custom_id_to_vertex_index[(core._map_layer("0"), core._map_node_id("A"))]
+    assert new_idx != original_idx
+    # existing edge should still have source = original_idx
+    e = list(core.graph.edges())[0]
+    assert e.source() == original_idx
+
+
+def test_vertex_and_edge_property_name_separation(builder_and_core):
+    bldr, core = builder_and_core
+    # seed vertex with 'weight'
+    df_n = pd.DataFrame({"node_id":["A","B"],"layer":["0","0"], "weight":[1,2]})
+    bldr.add_vertices_from_dataframe(df_n, "node_id","layer", property_cols=["weight"], drop_na=False)
+    # seed edge with same prop name
+    bldr.add_edges_from_dataframe(
+        pd.DataFrame({
+            "source_id":["A"],
+            "source_layer":["0"],
+            "target_id":["B"],
+            "target_layer":["0"],
+            "weight":[99]
+        }),
+        source_id_col="source_id", source_layer_col="source_layer",
+        target_id_col="target_id", target_layer_col="target_layer",
+        property_cols=["weight"], drop_na=False
+    )
+    # vertex weight for A != edge weight
+    v_idx = core.custom_id_to_vertex_index[(core._map_layer("0"), core._map_node_id("A"))]
+    assert core.graph.vp["weight"][core.graph.vertex(v_idx)] == 1
+    # edge weight is 99
+    e = list(core.graph.edges())[0]
+    assert core.graph.ep["weight"][e] == 99
+
+
+def test_directional_edges_are_distinct(builder_and_core):
+    bldr, core = builder_and_core
+    # seed vertices
+    bldr.add_vertices_from_dataframe(
+        pd.DataFrame({"node_id":["A","B"],"layer":["0","0"]}),
+        "node_id","layer", drop_na=False
+    )
+    # A->B with strength=1; B->A with strength=2
+    edges = pd.DataFrame({
+        "source_id":    ["A","B"],
+        "source_layer": ["0","0"],
+        "target_id":    ["B","A"],
+        "target_layer": ["0","0"],
+        "strength":     [1,2]
+    })
+    bldr.add_edges_from_dataframe(edges, "source_id","source_layer",
+                                  "target_id","target_layer",
+                                  property_cols=["strength"], drop_na=False)
+    assert core.graph.num_edges() == 2
+    strengths = sorted(core.graph.ep["strength"].a.tolist())
+    assert strengths == [1,2]
+
+
+def test_cross_layer_inconsistency_detection(builder_and_core):
+    bldr, core = builder_and_core
+    # nodes on layers 0 and 1
+    df_n = pd.DataFrame({
+        "node_id":["A","B"],
+        "layer":["0","1"]
+    })
+    bldr.add_vertices_from_dataframe(df_n, "node_id","layer", drop_na=False)
+    # Edge that incorrectly claims A is on layer "1" should be dropped if source/target mismatch
+    bad_edge = pd.DataFrame({
+        "source_id":["A"],
+        "source_layer":["1"],  # mismatched layer
+        "target_id":["B"],
+        "target_layer":["1"],
+    })
+    bldr.add_edges_from_dataframe(bad_edge, "source_id","source_layer","target_id","target_layer",
+                                  property_cols=None, drop_na=False)
+    # Should have 0 edges because A@1 doesn't exist
+    assert core.graph.num_edges() == 0
+    # Also sanity check stored layer_hash matches original
+    for v in core.graph.vertices():
+        layer_code = core.graph.vp["layer_hash"][v]
+        # decode back to name and ensure it's consistent
+        name = core.layer_code_to_name.get(layer_code)
+        assert name in {"0","1"}
+
+
+def test_large_scale_near_collision_invariants(builder_and_core):
+    bldr, core = builder_and_core
+    # create near-duplicate ids
+    base_ids = [f"node{i}" for i in range(100)]
+    warped = [i if idx % 2 == 0 else f"{i} " for idx, i in enumerate(base_ids)]
+    layers = ["0","1","2"]
+    df_n = pd.DataFrame({
+        "node_id": np.random.choice(warped, size=100),
+        "layer":   np.random.choice(layers, size=100)
+    })
+    # add them
+    bldr.add_vertices_from_dataframe(df_n, "node_id", "layer", drop_na=False)
+    # random edges, some with invalid ids
+    s_ids = np.random.choice(warped + ["nonexistent"], size=500)
+    t_ids = np.random.choice(warped + ["missing"], size=500)
+    s_layers = np.random.choice(layers, size=500)
+    t_layers = np.random.choice(layers, size=500)
+    df_e = pd.DataFrame({
+        "source_id": s_ids,
+        "source_layer": s_layers,
+        "target_id": t_ids,
+        "target_layer": t_layers
+    })
+    bldr.add_edges_from_dataframe(df_e, "source_id","source_layer","target_id","target_layer",
+                                  property_cols=None, drop_na=False)
+    # invariants
+    for e in core.graph.edges():
+        assert e.source() in core.vertex_index_to_custom_id
+        assert e.target() in core.vertex_index_to_custom_id

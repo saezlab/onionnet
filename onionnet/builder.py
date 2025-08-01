@@ -320,7 +320,8 @@ class OnionNetBuilder:
         drop_na: bool = True,
         drop_duplicates: bool = True,
         string_override: bool = False,
-        property_types: dict = None
+        property_types: dict = None,
+        consider_props_in_duplicate: bool = False,
     ) -> None:
         """
         Add edges to the graph from a DataFrame containing edge information.
@@ -336,6 +337,7 @@ class OnionNetBuilder:
             drop_duplicates (bool): Drop duplicate edge pairs (source,layer,target,layer rows) if True, including double self loops.
             string_override (bool): Treat all props as categorical.
             property_types (dict): Explicit types for properties.
+            consider_props_in_duplicate (bool): If True, duplicates are defined by endpoints and the listed property columns (so two nodes could be from A1->A2, but with different properties or property values), otherwise only by endpoints.
         """
         # if there are literally no rows to add, bail out immediately
         if df_edges.shape[0] == 0:
@@ -361,8 +363,15 @@ class OnionNetBuilder:
                     f"Detected NA in edge keys but drop_na=False; "
                     "please set drop_na=True or clean your data first."
                 )
-        # warn if duplicates would be kept
-        if not drop_duplicates:
+        uniq_subset = [
+            source_id_col, source_layer_col,
+            target_id_col, target_layer_col
+        ]
+        if drop_duplicates:
+            if consider_props_in_duplicate and property_cols:
+                uniq_subset += property_cols
+            df = df.drop_duplicates(subset=uniq_subset)
+        else: # warn if duplicates would be kept
             ndup = df.duplicated(
                 subset=[source_id_col, source_layer_col, target_id_col, target_layer_col]
             ).sum()
@@ -371,9 +380,6 @@ class OnionNetBuilder:
                     f"{ndup} duplicate edge rows found but drop_duplicates=False",
                     UserWarning
                 )
-        # duplicate removal
-        if drop_duplicates:
-            df = df.drop_duplicates(subset=[source_id_col, source_layer_col, target_id_col, target_layer_col])
         # cast keys
         df[source_id_col] = df[source_id_col].astype(str)
         df[source_layer_col] = df[source_layer_col].astype(str)
