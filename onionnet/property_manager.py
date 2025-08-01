@@ -210,11 +210,21 @@ class OnionNetPropertyManager:
         
         if new_prop_name is None:
             new_prop_name = f"{encoded_prop_name}_decoded"
-        
+
         if mapping_dict is None:
             if encoded_prop_type == 'v':
+                # property must exist
+                if encoded_prop_name not in self.core.graph.vp:
+                    raise KeyError(f"Vertex property '{encoded_prop_name}' does not exist.")
+                # must be categorical
+                if encoded_prop_name not in self.core.vertex_categorical_mappings:
+                    raise ValueError(f"Vertex property '{encoded_prop_name}' is not categorical and cannot be decoded.")
                 mapping_dict = self.core.vertex_categorical_mappings[encoded_prop_name]['int_to_str']
-            else:
+            else:  # edge
+                if encoded_prop_name not in self.core.graph.ep:
+                    raise KeyError(f"Edge property '{encoded_prop_name}' does not exist.")
+                if encoded_prop_name not in self.core.edge_categorical_mappings:
+                    raise ValueError(f"Edge property '{encoded_prop_name}' is not categorical and cannot be decoded.")
                 mapping_dict = self.core.edge_categorical_mappings[encoded_prop_name]['int_to_str']
         
         # Retrieve the encoded property based on dimension
