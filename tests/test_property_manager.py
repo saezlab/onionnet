@@ -195,3 +195,197 @@ def test_bulk_column_name_cleaning(pm_and_graph_simple):
     pm.decode_property_labels_bulk(df, encoded_prop_type='v')
     # cleaned “my_col1_test_name_decoded” should now be present
     assert "my_col1_test_name_decoded" in core.graph.vp
+
+
+# --- Advanced / robustness tests ------------------------------------------
+
+def test_roundtrip_decode_vertex_consistency(pm_and_graph_simple):
+    # Round-trip decoding: decode then re-encode should recover original integer codes.
+    core, pm = pm_and_graph_simple
+    pm.decode_property_labels('v', 'grp', new_prop_name='grp_decoded')
+    decoded_vals = [core.graph.vp['grp_decoded'][v] for v in core.graph.vertices()]
+    inv_map = {v: k for k, v in core.vertex_categorical_mappings['grp']['int_to_str'].items()}
+    reencoded = [inv_map.get(val) for val in decoded_vals]
+    original_codes = [core.graph.vp['grp'][v] for v in core.graph.vertices()]
+    assert reencoded == original_codes
+
+
+def test_decode_numeric_with_custom_mapping(pm_and_graph_simple):
+    # Decode a non-categorical numeric property by supplying an explicit mapping_dict.
+    core, pm = pm_and_graph_simple
+    # create a numeric vertex property manually
+    vp = core.graph.new_vertex_property("int")
+    for i, v in enumerate(core.graph.vertices()):
+        vp[v] = i  # distinct codes 0,1,2
+    core.graph.vp["num_code"] = vp
+    custom_map = {0: "zero", 1: "one", 2: "two"}
+    pm.decode_property_labels(
+        encoded_prop_type='v',
+        encoded_prop_name='num_code',
+        new_prop_name='num_code_decoded',
+        mapping_dict=custom_map,
+        default_label='unknown'
+    )
+    decoded = [core.graph.vp['num_code_decoded'][v] for v in core.graph.vertices()]
+    assert set(decoded) == {"zero", "one", "two"}
+
+
+def test_bulk_decode_missing_encoded_prop_raises(pm_and_graph_simple):
+    # DataFrame has an object column not present in categorical mappings → expect failure.
+    core, pm = pm_and_graph_simple
+    df = pd.DataFrame({"unknown": ["a", "b", "c"]})
+    with pytest.raises(KeyError):
+        pm.decode_property_labels_bulk(df, encoded_prop_type='v')
+
+
+def test_bulk_decode_cleaned_name_collision(pm_and_graph_simple):
+    # Two original column names collapse to the same cleaned decoded name; ensure at least one decoded prop appears.
+    core, pm = pm_and_graph_simple
+    # Prepare conflicting encoded props: "A B" and "a_b"
+    core.vertex_categorical_mappings["A B"] = {
+        "str_to_int": {"x": 0}, "int_to_str": {0: "x"}
+    }
+    vp1 = core.graph.new_vertex_property("int")
+    for v in core.graph.vertices():
+        vp1[v] = 0
+    core.graph.vp["A B"] = vp1
+
+    core.vertex_categorical_mappings["a_b"] = {
+        "str_to_int": {"y": 0}, "int_to_str": {0: "y"}
+    }
+    vp2 = core.graph.new_vertex_property("int")
+    for v in core.graph.vertices():
+        vp2[v] = 0
+    core.graph.vp["a_b"] = vp2
+
+    df = pd.DataFrame({
+        "A B": ["x", "x", "x"],
+        "a_b": ["y", "y", "y"]
+    })
+    pm.decode_property_labels_bulk(df, encoded_prop_type='v')
+    # Cleaned name is "a_b_decoded"
+    assert "a_b_decoded" in core.graph.vp
+
+
+def test_decode_idempotent(pm_and_graph_simple):
+    # Running decode twice with same target property should produce identical results (overwrite case).
+    core, pm = pm_and_graph_simple
+    pm.decode_property_labels('v', 'grp', new_prop_name='grp_decoded')
+    first = [core.graph.vp['grp_decoded'][v] for v in core.graph.vertices()]
+    # mutate first to ensure overwrite happens
+    core.graph.vp['grp_decoded'][core.graph.vertex(0)] = "OVERRIDE"
+    pm.decode_property_labels('v', 'grp', new_prop_name='grp_decoded')
+    second = [core.graph.vp['grp_decoded'][v] for v in core.graph.vertices()]
+    assert "OVERRIDE" not in second
+    assert first == second
+
+
+def test_partial_custom_mapping_with_default(pm_and_graph_simple):
+    # Provide mapping that covers only some codes; unmatched codes use default_label.
+    core, pm = pm_and_graph_simple
+    grp_map = core.vertex_categorical_mappings['grp']['str_to_int']
+    x_code = grp_map['x']
+    custom_map = {x_code: "EX"}  # no mapping for 'y'
+    pm.decode_property_labels('v', 'grp', mapping_dict=custom_map, default_label='MISSING', new_prop_name='grp_partial')
+    decoded = [core.graph.vp['grp_partial'][v] for v in core.graph.vertices()]
+    assert "EX" in decoded
+    assert "MISSING" in decoded
+
+
+def test_default_label_non_string(pm_and_graph_simple):
+    core, pm = pm_and_graph_simple
+    # Remove 'y' from the mapping so its code falls back to default_label
+    orig_int_to_str = core.vertex_categorical_mappings["grp"]["int_to_str"]
+    # Suppose 'y' has some code; drop it so we have a missing code
+    y_code = core.vertex_categorical_mappings["grp"]["str_to_int"]["y"]
+    core.vertex_categorical_mappings["grp"]["int_to_str"] = {k: v for k, v in orig_int_to_str.items() if k != y_code}
+
+    pm.decode_property_labels('v', 'grp', default_label=123, new_prop_name='grp_default_int')
+    decoded = [core.graph.vp['grp_default_int'][v] for v in core.graph.vertices()]
+    # Expect at least one default label "123" (stringified)
+    assert "123" in decoded
+
+
+def test_bulk_decode_wrong_dimension(pm_and_graph_simple):
+    # Passing an edge-like column to vertex decode bulk should error (dimension mismatch).
+    core, pm = pm_and_graph_simple
+    # 'lbl' is an edge property, attempt to decode it as vertex
+    df = pd.DataFrame({"lbl": ["foo", "bar"]})
+    with pytest.raises(ValueError):
+        pm.decode_property_labels_bulk(df, encoded_prop_type='v')
+
+
+def test_decode_after_mapping_mutation(pm_and_graph_simple):
+    # Mutating the underlying categorical mapping between decodes should reflect in new decoded prop.
+    core, pm = pm_and_graph_simple
+    pm.decode_property_labels('v', 'grp', new_prop_name='grp_decoded')
+    # change mapping for 'x' to something else
+    x_code = core.vertex_categorical_mappings['grp']['str_to_int']['x']
+    core.vertex_categorical_mappings['grp']['int_to_str'][x_code] = "Z"
+    pm.decode_property_labels('v', 'grp', new_prop_name='grp_decoded2')
+    decoded1 = [core.graph.vp['grp_decoded'][v] for v in core.graph.vertices()]
+    decoded2 = [core.graph.vp['grp_decoded2'][v] for v in core.graph.vertices()]
+    assert decoded1 != decoded2
+
+
+def test_integration_view_node_properties_includes_decoded(pm_and_graph_simple):
+    # After decoding, view_node_properties_by_names should still work and include decoded layer/node info.
+    core, pm = pm_and_graph_simple
+    pm.decode_property_labels('v', 'grp', new_prop_name='grp_decoded')
+    props = pm.view_node_properties_by_names("0", "A", verbose=False)
+    assert 'grp' in props
+    assert 'decoded_layer' in props
+    assert 'decoded_node_id' in props
+
+
+@pytest.mark.slow
+def test_high_cardinality_vertex_decode():
+    # Stress test: create high-cardinality vertex categorical prop and decode it.
+    core = OnionNetGraph()
+    bldr = OnionNetBuilder(core)
+    N = 3000  # moderately large to keep test reasonable
+    cats = [f"cat_{i}" for i in range(N)]
+    df = pd.DataFrame({
+        "node_id": [str(i) for i in range(N)],
+        "layer": ["0"] * N,
+        "huge": cats
+    })
+    bldr.add_vertices_from_dataframe(df, "node_id", "layer", property_cols=["huge"], drop_na=False)
+    pm = OnionNetPropertyManager(core)
+    pm.decode_property_labels('v', 'huge', new_prop_name='huge_decoded')
+    decoded = {core.graph.vp['huge_decoded'][v] for v in core.graph.vertices() if isinstance(core.graph.vp['huge_decoded'][v], str)}
+    # Expect at least all unique strings to be present in decoded
+    assert len({d for d in decoded if d.startswith("cat_")}) >= N
+
+
+# @pytest.mark.slow
+# def test_high_cardinality_vertex_decode_huge():
+#     # Stress test: create high-cardinality vertex categorical prop and decode it.
+#     core = OnionNetGraph()
+#     bldr = OnionNetBuilder(core)
+#     N = 10_000_000  # large test
+#     cats = [f"cat_{i}" for i in range(N)]
+#     df = pd.DataFrame({
+#         "node_id": [str(i) for i in range(N)],
+#         "layer": ["0"] * N,
+#         "huge": cats
+#     })
+#     bldr.add_vertices_from_dataframe(df, "node_id", "layer", property_cols=["huge"], drop_na=False)
+#     pm = OnionNetPropertyManager(core)
+#     pm.decode_property_labels('v', 'huge', new_prop_name='huge_decoded')
+#     decoded = {core.graph.vp['huge_decoded'][v] for v in core.graph.vertices() if isinstance(core.graph.vp['huge_decoded'][v], str)}
+#     # Expect at least all unique strings to be present in decoded
+#     assert len({d for d in decoded if d.startswith("cat_")}) >= N
+
+
+def test_decode_overwrites_existing(pm_and_graph_simple):
+    # Decoding into an existing decoded property should restore correct values, not preserve manual overrides.
+    core, pm = pm_and_graph_simple
+    pm.decode_property_labels('v', 'grp', new_prop_name='grp_decoded')
+    # manually override one decoded entry
+    first_v = list(core.graph.vertices())[0]
+    core.graph.vp['grp_decoded'][first_v] = "OVERRIDE"
+    pm.decode_property_labels('v', 'grp', new_prop_name='grp_decoded')
+    decoded = [core.graph.vp['grp_decoded'][v] for v in core.graph.vertices()]
+    assert "OVERRIDE" not in decoded
+

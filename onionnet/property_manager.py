@@ -211,6 +211,11 @@ class OnionNetPropertyManager:
         if new_prop_name is None:
             new_prop_name = f"{encoded_prop_name}_decoded"
 
+        if encoded_prop_type == 'v' and encoded_prop_name in self.core.edge_categorical_mappings:
+            raise ValueError(f"Property '{encoded_prop_name}' is an edge property, cannot decode as vertex.")
+        if encoded_prop_type == 'e' and encoded_prop_name in self.core.vertex_categorical_mappings:
+            raise ValueError(f"Property '{encoded_prop_name}' is a vertex property, cannot decode as edge.")
+
         if mapping_dict is None:
             if encoded_prop_type == 'v':
                 # property must exist
