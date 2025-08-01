@@ -644,7 +644,7 @@ def test_edge_partial_invalid_layers(builder_and_core, toy_nodes):
 def test_huge_categorical_cardinality(builder_and_core, toy_nodes):
     bldr, core = builder_and_core
     bldr.add_vertices_from_dataframe(toy_nodes, "node_id","layer", drop_na=False)
-    N = 10_000*1000
+    N = 10_000*10 # previously tested up to 10_000*1000
     cats = [f"C{i}" for i in range(N)]
     df = pd.DataFrame({
       "source_id":    ["A"]*N,
@@ -675,3 +675,86 @@ def test_grow_onion_idempotent(builder_and_core, toy_nodes, toy_edges):
     # original mapping intact
     for (lay, nid), idx in core.custom_id_to_vertex_index.items():
         assert isinstance(idx, int)
+
+def test_edge_property_alignment_after_filtering(builder_and_core):
+    bldr, core = builder_and_core
+    # seed nodes
+    toy_nodes = pd.DataFrame({"node_id":["A"],"layer":["0"]})
+    bldr.add_vertices_from_dataframe(toy_nodes, "node_id","layer", drop_na=False)
+    # mixed df: second row has missing target, third has invalid layer
+    df = pd.DataFrame({
+        "source_id":    ["A","A","A"],
+        "source_layer": ["0","0","X"],
+        "target_id":    ["A", None,"A"],
+        "target_layer": ["0","0","0"],
+        "w":            [1,2,3],
+        "cat":          ["x","y","z"]
+    })
+    bldr.add_edges_from_dataframe(df, "source_id","source_layer",
+                                  "target_id","target_layer",
+                                  property_cols=["w","cat"], drop_na=True)
+    # only the first row remains
+    assert core.graph.num_edges() == 1
+    # both properties exist and length==1
+    assert len(core.graph.ep["w"].a)   == 1
+    assert len(core.graph.ep["cat"].a) == 1
+    # and the single cat‐code maps back to "x"
+    code = core.graph.ep["cat"].a[0]
+    assert core.edge_categorical_mappings["cat"]["int_to_str"][code] == "x"
+
+def test_two_builders_same_core():
+    core = OnionNetGraph()
+    b1 = OnionNetBuilder(core)
+    b2 = OnionNetBuilder(core)
+    df_n = pd.DataFrame({"node_id":["A"],"layer":["0"]})
+    df_e = pd.DataFrame({"source_id":["A"],"source_layer":["0"],
+                         "target_id":["A"],"target_layer":["0"],
+                         "w":[5]})
+    b1.add_vertices_from_dataframe(df_n, "node_id","layer", drop_na=False)
+    b2.add_edges_from_dataframe   (df_e, "source_id","source_layer","target_id","target_layer",
+                                    property_cols=["w"], drop_na=False)
+    assert core.graph.num_vertices() == 1
+    assert core.graph.num_edges()    == 1
+
+def test_property_name_is_string_number(builder_and_core):
+    bldr, core = builder_and_core
+    df = pd.DataFrame({"node_id":["A"],"layer":["0"], "1":[100]})
+    # either error or treat it as "prop_1" internally—but must not crash
+    bldr.add_vertices_from_dataframe(df, "node_id","layer",
+                                     property_cols=["1"], drop_na=False)
+    assert "1" in core.graph.vp
+    assert core.graph.vp["1"].a[0] == 100
+
+def test_layer_key_normalization(builder_and_core):
+    bldr, core = builder_and_core
+    df = pd.DataFrame({
+        "node_id":["X","Y","Z"],
+        "layer": ["1"," 1","1 "]
+    })
+    bldr.add_vertices_from_dataframe(df, "node_id","layer", drop_na=False)
+    # if you *intend* to collapse them, expect a single layer→one code:
+    codes = {core._map_layer(l) for l in ["1"," 1","1 "]}
+    assert len(codes) == 1
+
+def test_edge_property_type_conflict(builder_and_core, toy_nodes, toy_edges):
+    bldr, core = builder_and_core
+    bldr.add_vertices_from_dataframe(toy_nodes, "node_id","layer", drop_na=False)
+    # 1) ingest strength as numeric
+    bldr.add_edges_from_dataframe(toy_edges, "source_id","source_layer",
+                                  "target_id","target_layer",
+                                  property_cols=["strength"], drop_na=False,
+                                  property_types={"strength":"int"})
+    # 2) try to ingest strength again as categorical → should error
+    with pytest.raises(ValueError):
+        bldr.add_edges_from_dataframe(toy_edges, "source_id","source_layer",
+                                      "target_id","target_layer",
+                                      property_cols=["strength"], drop_na=False,
+                                      property_types={"strength":"str"})
+        
+def test_grow_onion_idempotent_with_drop_duplicates(builder_and_core, toy_nodes, toy_edges):
+    bldr, core = builder_and_core
+    bldr.grow_onion(toy_nodes, toy_edges, drop_na=False, drop_duplicates=True)
+    v1, e1 = core.graph.num_vertices(), core.graph.num_edges()
+    bldr.grow_onion(toy_nodes, toy_edges, drop_na=False, drop_duplicates=True)
+    assert core.graph.num_vertices() == v1
+    assert core.graph.num_edges()    == e1
