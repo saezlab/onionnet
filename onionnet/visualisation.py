@@ -352,8 +352,12 @@ def get_legend(source, prop=None, ordered_cats=None, verbose=False, mode=None, c
             norm = plt.Normalize(vmin=min_val, vmax=max_val)
             sm = cm.ScalarMappable(norm=norm, cmap=cmap)
             sm.set_array([])
-            plt.figure(figsize=(6, 1))
-            cbar = plt.colorbar(sm, orientation='horizontal')
+            # Create a Figure + Axes so colorbar() knows where to draw
+            fig, ax = plt.subplots(figsize=(6, 1))
+            # Attach the colorbar to that Axes
+            cbar = fig.colorbar(sm, ax=ax, orientation='horizontal')
+            # (Optionally hide the empty image Axes if you just want the bar)
+            ax.remove()
             cbar.set_label(prop.capitalize() if prop else "Value")
             plt.show()
             return
@@ -387,8 +391,12 @@ def get_legend(source, prop=None, ordered_cats=None, verbose=False, mode=None, c
             norm = plt.Normalize(vmin=min_val, vmax=max_val)
             sm = cm.ScalarMappable(norm=norm, cmap=cmap)
             sm.set_array([])
-            plt.figure(figsize=(6, 1))
-            cbar = plt.colorbar(sm, orientation='horizontal')
+            # Create a Figure + Axes so colorbar() knows where to draw
+            fig, ax = plt.subplots(figsize=(6, 1))
+            # Attach the colorbar to that Axes
+            cbar = fig.colorbar(sm, ax=ax, orientation='horizontal')
+            # (Optionally hide the empty image Axes if you just want the bar)
+            ax.remove()
             cbar.set_label(prop.capitalize() if prop else "Value")
             plt.show()
             return
