@@ -7,7 +7,27 @@ from onionnet.core import OnionNetGraph
 from onionnet.property_manager import OnionNetPropertyManager
 
 
-# --- Fixtures --------------------------------------------------------------
+# --- Fixtures for vertex access/manipulation tests --------------------
+
+@pytest.fixture
+def access_core_pm():
+    """
+    Simple graph with two vertices ('A' on layer 'L1', 'B' on layer 'L2') and a numeric vertex prop 'p'.
+    Used to test get/set/view routines independently of the more complex categorical fixtures.
+    """
+    core = OnionNetGraph()
+    bldr = OnionNetBuilder(core)
+    df = pd.DataFrame({
+        "node_id": ["A", "B"],
+        "layer":   ["L1", "L2"],
+        "p":       [1, 2]
+    })
+    bldr.add_vertices_from_dataframe(df, "node_id", "layer", property_cols=["p"], drop_na=False)
+    pm = OnionNetPropertyManager(core)
+    return core, pm
+
+
+# --- Fixtures for more complex decoding --------------------------------
 
 @pytest.fixture
 def pm_and_graph_simple():
@@ -97,6 +117,135 @@ def toy_edges():
         "target_layer": ["0","1"],
         "strength":     [10,20]
     })
+
+#### SIMPLE FUNCTIONS
+
+# --- Tests for identifier lookups -----------------------------------------
+
+def test_get_vertex_by_encoding_and_name_lookup_success(access_core_pm):
+    # Ensure that looking up a vertex by its encoded tuple and by its human-readable (name) tuple returns the same vertex.
+    core, pm = access_core_pm
+    layer_code = core._map_layer("L1")
+    node_id_int = core._map_node_id("A")
+    v_enc = pm.get_vertex_by_encoding_tuple(layer_code, node_id_int)
+    v_name = pm.get_vertex_by_name_tuple("L1", "A")
+    assert v_enc is not None
+    assert v_enc == v_name
+
+def test_get_vertex_by_encoding_tuple_not_found_returns_none(access_core_pm):
+    # Missing encoding tuple should yield None rather than blowing up.
+    core, pm = access_core_pm
+    v = pm.get_vertex_by_encoding_tuple(9999, 8888)  # nonexistent layer/node combo
+    assert v is None
+
+def test_get_vertex_by_name_tuple_missing_raises(access_core_pm):
+    # Asking for a vertex by a name tuple with unknown layer or node_id should raise KeyError.
+    _, pm = access_core_pm
+    with pytest.raises(KeyError):
+        pm.get_vertex_by_name_tuple("NONEXISTENT", "A")
+    with pytest.raises(KeyError):
+        pm.get_vertex_by_name_tuple("L1", "Z")
+
+
+# --- Tests for property access & mutation ----------------------------------
+
+def test_get_vertex_property_existing_and_missing(access_core_pm):
+    # Existing property should be returned; missing property or missing vertex returns None.
+    core, pm = access_core_pm
+    layer_code = core._map_layer("L1")
+    node_id_int = core._map_node_id("A")
+    # existing prop
+    assert pm.get_vertex_property(layer_code, node_id_int, "p") == 1
+    # nonexistent property
+    assert pm.get_vertex_property(layer_code, node_id_int, "does_not_exist") is None
+    # nonexistent vertex
+    assert pm.get_vertex_property(999, 999, "p") is None
+
+def test_set_vertex_property_creates_and_updates(access_core_pm):
+    # Setting a new property on an existing vertex creates it and updates value; subsequent sets overwrite.
+    core, pm = access_core_pm
+    layer_code = core._map_layer("L1")
+    node_id_int = core._map_node_id("A")
+    # create new property 'q'
+    pm.set_vertex_property(layer_code, node_id_int, "q", 42)
+    assert "q" in core.graph.vp
+    assert pm.get_vertex_property(layer_code, node_id_int, "q") == 42
+    # update it
+    pm.set_vertex_property(layer_code, node_id_int, "q", 99)
+    assert pm.get_vertex_property(layer_code, node_id_int, "q") == 99
+
+def test_set_vertex_property_on_missing_vertex_prints(access_core_pm, capsys):
+    # Attempting to set a property on a missing vertex should not raise, but should print an informative message.
+    _, pm = access_core_pm
+    pm.set_vertex_property(12345, 67890, "foo", "bar")
+    out = capsys.readouterr().out
+    assert "Vertex (12345, 67890) not found." in out
+
+
+# --- Tests for viewing properties -----------------------------------------
+
+def test_view_node_properties_returns_expected(access_core_pm):
+    # view_node_properties should return the raw property as well as decoded layer/node information.
+    core, pm = access_core_pm
+    layer_code = core._map_layer("L1")
+    node_id_int = core._map_node_id("A")
+    props = pm.view_node_properties(layer_code, node_id_int)
+    assert props["p"] == 1
+    assert props["decoded_layer"] == "L1"
+    assert props["decoded_node_id"] == "A"
+    # internal hashes should also be present as keys
+    assert "layer_hash" in props and "node_id_hash" in props
+
+def test_view_node_properties_unknown_vertex_returns_empty(capsys):
+    # Asking to view a non-existent vertex should return empty dict and print an error.
+    core = OnionNetGraph()
+    pm = OnionNetPropertyManager(core)
+    props = pm.view_node_properties(0, 0)
+    assert props == {}
+    out = capsys.readouterr().out
+    assert "Vertex not found." in out
+
+def test_view_node_properties_by_names_verbose(pm_and_graph_simple, capsys):
+    # view_node_properties_by_names with verbose=True should print formatted output and return the same dict.
+    core, pm = pm_and_graph_simple
+    # decode grp so the decoded field exists
+    pm.decode_property_labels('v', 'grp', new_prop_name='grp_decoded')
+    props = pm.view_node_properties_by_names("0", "A", verbose=True)
+    out = capsys.readouterr().out
+    assert "Properties for (0, A):" in out
+    # ensure the returned dict contains expected entries
+    assert 'grp' in props
+    assert 'grp_decoded' in props
+    assert 'decoded_layer' in props and props['decoded_layer'] == "0"
+    assert 'decoded_node_id' in props and props['decoded_node_id'] == "A"
+
+
+# --- Tests for label property creation ------------------------------------
+
+def test_create_node_label_property_creates_and_formats(pm_and_graph_simple):
+    # create_node_label_property should produce a string like "layer:node_id"
+    core, pm = pm_and_graph_simple
+    pm.create_node_label_property('node_label')
+    assert 'node_label' in core.graph.vp
+    v = pm.get_vertex_by_name_tuple("0", "A")
+    label = core.graph.vp['node_label'][v]
+    assert label == "0:A"  # exact format for this fixture
+
+def test_create_node_label_property_idempotent(pm_and_graph_simple, capsys):
+    # invoking create_node_label_property when it already exists should not error and should print a notice.
+    core, pm = pm_and_graph_simple
+    pm.create_node_label_property('node_label')
+    # call again
+    pm.create_node_label_property('node_label')
+    out = capsys.readouterr().out
+    assert "already exists" in out
+    # label remains correct
+    v = pm.get_vertex_by_name_tuple("0", "A")
+    assert core.graph.vp['node_label'][v] == "0:A"
+
+
+
+##### DECODING PROPERTIES
 
 # --- Tests for simple fixture ---------------------------------------------
 
