@@ -169,14 +169,14 @@ class OnionNetSearcher:
         """
         Perform a search on the graph to extract a subgraph within a specified distance from a starting node.
         
-        The search can be conducted in 'downstream', 'upstream', or bidirectional ('bi') mode. It computes the 
+        The search can be conducted in 'downstream', 'upstream', bidirectional ('bi'), or non-directed ('any') mode. It computes the 
         shortest distances from the starting vertex and returns a GraphView containing vertices within the specified 
         maximum distance. Optionally, the subgraph can be plotted.
         
         Parameters:
             start_node_idx (int, optional): The index of the starting vertex (default is 0).
             max_dist (int, optional): Maximum distance (in hops) from the starting vertex (default is 5).
-            direction (str, optional): Direction of search; 'downstream', 'upstream', or 'bi' for bidirectional (default is 'downstream').
+            direction (str, optional): Direction of search; 'downstream', 'upstream', 'bi' for bidirectional, or 'any' for non-directed (default is 'downstream').
             node_text_prop (str, optional): Vertex property to use for node labels in the plot (default is 'node_label').
             show_plot (bool, optional): If True, displays a plot of the filtered subgraph (default is True).
             include_upstream_children (bool, optional): For bidirectional search, if True, include additional upstream children (default is False).
@@ -199,6 +199,32 @@ class OnionNetSearcher:
             start_vertex = g.vertex(start_node_idx)
         except Exception as e:
             raise ValueError(f"Invalid start index {start_node_idx}: {e}")
+
+        if direction == 'any':
+            # create an undirected view of g
+            g_und = GraphView(g, directed=False)
+            # compute shortest‐path distances on undirected graph
+            distances = shortest_distance(g_und,
+                                        source=start_vertex,
+                                        max_dist=max_dist)
+            final = {v for v in g_und.vertices() if distances[v] <= max_dist}
+            if verbosity:
+                print("All-directions nodes:",
+                    [f"{int(v)} ({get_label(v)})" for v in final])
+
+            # wrap into GraphView, plot, and return
+            final_indices = {int(v) for v in final}
+            result = GraphView(g, vfilt=lambda v: int(v) in final_indices)
+            print(f"Filtered graph contains {result.num_vertices()} vertices and {result.num_edges()} edges.")
+            if show_plot:
+                if node_text_prop in g.vp:
+                    vertex_text = g.vp[node_text_prop]
+                else:
+                    vertex_text = g.new_vertex_property('string')
+                    for v in result.vertices():
+                        vertex_text[v] = str(int(v))
+                graph_draw(result, vertex_text=vertex_text, **kwargs)
+            return result
 
         upstream_nodes = set()
         downstream_nodes = set()
@@ -226,7 +252,7 @@ class OnionNetSearcher:
         elif direction == 'downstream':
             final = downstream_nodes
         else:
-            raise ValueError("Invalid direction; choose 'upstream', 'downstream', or 'bi'.")
+            raise ValueError("Invalid direction; choose 'upstream', 'downstream', 'bi', or 'any'.")
 
         final_indices = {int(v) for v in final}
         result = GraphView(g, vfilt=lambda v: int(v) in final_indices)
