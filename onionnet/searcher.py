@@ -488,112 +488,80 @@ class OnionNetSearcher:
         return GraphView(gv_edges, vfilt=vfilt)
     
 
-    def filter_edges_between_categories(self,
-                                        source_label: str,
-                                        target_label: str
-                                        ) -> GraphView:
+    def filter_edges_between_categories(
+        self,
+        source_label: str,
+        target_label: str,
+        mode: str = "forward"
+    ) -> GraphView:
         """
-        Create a subgraph containing only edges whose source‐vertex layer == source_label
-        and whose target‐vertex layer == target_label, then drop any isolated vertices.
+        Keep only those edges whose source‐vertex layer == source_label
+        and whose target‐vertex layer == target_label (direction 'forward'),
+        or the reverse, or both, then prune any isolates.
 
-        If the graph has edge‐properties 'source_layer' and 'target_layer', we
-        do a single vectorized mask on those.  Otherwise we fall back to testing
-        each edge’s endpoints against layer_hash via the generic filter_edges.
-
-        Raises
-        ------
-        KeyError
-            If either source_label or target_label is not in layer_name_to_code.
+        mode : {'forward','reverse','both'}
+          - 'forward':  source→target only  
+          - 'reverse': target→source only  
+          - 'both':    either direction 
         """
-        g  = self.core.graph
+        g = self.core.graph
 
-        # map human labels → integer layer‐codes (always present)
         try:
             src_code = self.core.layer_name_to_code[source_label]
             tgt_code = self.core.layer_name_to_code[target_label]
         except KeyError as e:
             raise KeyError(f"Unknown layer name: {e.args[0]}")
 
-        # choose fast vectorized path if edge‐props exist
-        if 'source_layer' in g.ep and 'target_layer' in g.ep:
-            pm = OnionNetPropertyManager(self.core)
-            try:
-                src_e_code = pm.get_category_code('source_layer', source_label, dim='e')
-                tgt_e_code = pm.get_category_code('target_layer', target_label, dim='e')
-            except KeyError:
-                # no matching edges: return empty view
-                empty_ep = g.new_edge_property('bool')
-                gv_edges = GraphView(g, efilt=empty_ep)
-            else:
-                efilt = g.new_edge_property('bool')
-                efilt.a = (
-                    (g.ep.source_layer.a == src_e_code) &
-                    (g.ep.target_layer.a == tgt_e_code)
-                )
-                gv_edges = GraphView(g, efilt=efilt)
+        lh = g.vp['layer_hash']
 
-        # fallback: test each edge via vertex layer_hash
+        if mode == "forward":
+            pred = lambda e: (
+                lh[e.source()] == src_code
+                and lh[e.target()] == tgt_code
+            )
+        elif mode == "reverse":
+            pred = lambda e: (
+                lh[e.source()] == tgt_code
+                and lh[e.target()] == src_code
+            )
+        elif mode == "both":
+            pred = lambda e: (
+                (lh[e.source()] == src_code and lh[e.target()] == tgt_code)
+                or
+                (lh[e.source()] == tgt_code and lh[e.target()] == src_code)
+            )
         else:
-            def pred(e):
-                lh = g.vp['layer_hash']
-                return (lh[e.source()] == src_code and
-                        lh[e.target()] == tgt_code)
-            # filter_edges will prune isolates
-            return self.filter_edges(pred)
+            raise ValueError(f"mode must be 'forward', 'reverse' or 'both', not {mode!r}")
 
-        # prune isolated vertices in vectorized branch
-        deg_map = gv_edges.degree_property_map('total')
-        vfilt   = g.new_vertex_property('bool')
-        vfilt.a = deg_map.a > 0
-        return GraphView(gv_edges, vfilt=vfilt)
+        return self.filter_edges(pred)
 
 
-    def create_bipartite_gv(self, layer1: str, layer2: str, prop_name: str = 'layer_decoded') -> GraphView:
+    def create_bipartite_gv(
+        self,
+        layer1: str,
+        layer2: str,
+        prop_name: str = "layer_decoded"
+    ) -> GraphView:
         """
-        Create a bipartite subgraph containing only edges crossing between layer1 and layer2,
-        then drop any now-isolated vertices.
-
-        layer1, layer2 : str
-            Human-readable layer names.
-        prop_name : str
-            Vertex-property name (string) that decodes layer_hash to names.  If 'layer_decoded'
-            and it doesn't exist, it will be built on the fly from layer_hash + layer_code_to_name.
-
-        Returns
-        -------
-        GraphView
+        Bipartite view: all edges crossing between layer1 and layer2,
+        in either direction, then drop isolates.
         """
+        # if the user wants to filter by a string‐decoded prop, build it first
         g = self.core.graph
-        # Ensure 'layer_decoded' exists if requested
         if prop_name not in g.vp:
-            if prop_name == 'layer_decoded':
-                vp = g.new_vertex_property('string')
-                lh_map = g.vp['layer_hash']
+            if prop_name == "layer_decoded":
+                vp = g.new_vertex_property("string")
                 for v in g.vertices():
-                    vp[v] = self.core.layer_code_to_name[int(lh_map[v])]
+                    code = int(g.vp['layer_hash'][v])
+                    vp[v] = self.core.layer_code_to_name.get(code, f"Unknown({code})")
                 g.vp[prop_name] = vp
             else:
                 raise KeyError(f"Vertex property '{prop_name}' does not exist.")
 
-        # Map layer names → integer codes
-        try:
-            code1 = self.core.layer_name_to_code[layer1]
-            code2 = self.core.layer_name_to_code[layer2]
-        except KeyError as e:
-            raise KeyError(f"Unknown layer name: {e.args[0]}")
-
-        # Grab integer layer_hash array
-        lh = g.vp['layer_hash'].a
-        # Fetch edge endpoint pairs
-        edges = g.get_edges()
-        src_idx, tgt_idx = edges[:,0], edges[:,1]
-
-        # Mask edges that cross exactly between the two codes
-        mask = ((lh[src_idx] == code1) & (lh[tgt_idx] == code2)) | ((lh[src_idx] == code2) & (lh[tgt_idx] == code1))
-
-        # Apply vectorized filter
-        efilt = g.new_edge_property('bool')
-        efilt.a = mask
-        gv_edges = GraphView(g, efilt=efilt)
-        return self._prune_isolated(gv_edges)
-
+        # Now just treat it as “both”‐direction filter on the integer layer‐hash:
+        return self.filter_edges_between_categories(
+            source_label=layer1,
+            target_label=layer2,
+            mode="both"
+        )
+    
