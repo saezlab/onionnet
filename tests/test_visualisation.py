@@ -8,6 +8,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 matplotlib.use('Agg')      # <-- switch to headless backend
 import graph_tool.all as gt
+from graph_tool.all import Graph, GraphView, sfdp_layout
 
 from onionnet.visualisation import (
     flatten_properties,
@@ -381,3 +382,120 @@ def test_prop_to_size_constant_and_edge_mode(edge_graph):
     # invalid mode
     with pytest.raises(ValueError):
         prop_to_size(g, sizes, mode='x')
+
+
+#### More comprehensive tests for layouts
+
+
+@pytest.fixture
+def tmp_tsv(tmp_path):
+    return str(tmp_path / "layout.tsv")
+
+def make_simple_graph(v_count=3, directed=False):
+    """
+    Helper: builds a Graph with v_count vertices and sets up either:
+    - layer_hash & node_id_hash (default), or
+    - v_int only, if you pop off the hashes.
+    """
+    g = Graph(directed=directed)
+    for _ in range(v_count):
+        g.add_vertex()
+    # simulate builder: fill in layer_hash & node_id_hash + v_int
+    g.vp["layer_hash"]   = g.new_vertex_property("int")
+    g.vp["node_id_hash"] = g.new_vertex_property("int")
+    g.vp["v_int"]        = g.new_vertex_property("int")
+    for i, v in enumerate(g.vertices()):
+        g.vp["layer_hash"][v]   = 0
+        g.vp["node_id_hash"][v] = i
+        g.vp["v_int"][v]        = i
+    return g
+
+def test_missing_key_properties_raises(tmp_tsv):
+    # Graph with neither hash nor v_int → error
+    g = Graph()
+    with pytest.raises(ValueError):
+        load_or_compute_layout(g, tmp_tsv)
+
+def test_inject_callable_and_file_written(tmp_tsv):
+    # If inject is a callable, should use it, write file, and return its layout
+    g = make_simple_graph(4)
+    def inject_fn(graph):
+        prop = graph.new_vertex_property("vector<double>")
+        for v in graph.vertices():
+            prop[v] = [int(v), int(v)*2]
+        return prop
+
+    pos = load_or_compute_layout(g, tmp_tsv, inject=inject_fn)
+    # ensure returned prop matches our inject
+    coords = [tuple(pos[v]) for v in g.vertices()]
+    assert coords == [(i, i*2) for i in range(4)]
+
+    # file must exist with matching columns and rows
+    df = pd.read_csv(tmp_tsv, sep="\t")
+    assert set(df.columns) == {"layer_hash","node_id_hash","x","y"}
+    assert len(df) == 4
+
+def test_inject_array_and_file_written(tmp_tsv):
+    # If inject is precomputed mapping (not callable)
+    g = make_simple_graph(2)
+    pre = g.new_vertex_property("vector<double>")
+    pre[g.vertex(0)] = [0.1, 0.2]
+    pre[g.vertex(1)] = [1.1, 1.2]
+
+    pos = load_or_compute_layout(g, tmp_tsv, inject=pre)
+    assert tuple(pos[g.vertex(1)]) == (1.1, 1.2)
+
+    df = pd.read_csv(tmp_tsv, sep="\t")
+    assert np.allclose(df["x"].values, [0.1,1.1])
+    assert np.allclose(df["y"].values, [0.2,1.2])
+
+def test_compute_and_load_vs_override(tmp_tsv):
+    # First run writes via sfdp_layout
+    g = make_simple_graph(3)
+    pos1 = load_or_compute_layout(g, tmp_tsv, override=False, inject=None)
+    df1 = pd.read_csv(tmp_tsv, sep="\t")
+    # Second run without override should load the same positions
+    pos2 = load_or_compute_layout(g, tmp_tsv, override=False, inject=None)
+    coords1 = [tuple(pos1[v]) for v in g.vertices()]
+    coords2 = [tuple(pos2[v]) for v in g.vertices()]
+    assert coords1 == coords2
+
+    # Now force override: new sfdp_layout (almost always different)
+    pos3 = load_or_compute_layout(g, tmp_tsv, override=True, inject=None)
+    df3 = pd.read_csv(tmp_tsv, sep="\t")
+    coords3 = [tuple(pos3[v]) for v in g.vertices()]
+    # file updated with override
+    assert len(df3) == 3
+    # very likely at least one coordinate differs
+    assert coords3 != coords1
+
+def test_missing_rows_in_file_error(tmp_tsv):
+    # Write an incomplete file missing one vertex
+    g = make_simple_graph(3)
+    df = pd.DataFrame({
+        "layer_hash": [0,0],
+        "node_id_hash":[0,1],
+        "x":[0,1],
+        "y":[0,1]
+    })
+    df.to_csv(tmp_tsv, sep="\t", index=False)
+    # Loading should complain about missing layout for v_int 2
+    with pytest.raises(ValueError):
+        load_or_compute_layout(g, tmp_tsv, override=False)
+
+def test_v_int_only_branch(tmp_tsv):
+    # Remove hash props so only v_int remains
+    g = make_simple_graph(3)
+    del g.vp["layer_hash"]
+    del g.vp["node_id_hash"]
+
+    # Compute → writes v_int key
+    pos = load_or_compute_layout(g, tmp_tsv)
+    df = pd.read_csv(tmp_tsv, sep="\t")
+    assert "v_int" in df.columns and "x" in df.columns and "y" in df.columns
+
+    # Edit file to drop the required column → should error
+    df = df.drop(columns=["v_int"])
+    df.to_csv(tmp_tsv, sep="\t", index=False)
+    with pytest.raises(ValueError):
+        load_or_compute_layout(g, tmp_tsv, override=False)
