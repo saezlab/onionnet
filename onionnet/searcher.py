@@ -495,14 +495,46 @@ class OnionNetSearcher:
         mode: str = "forward"
     ) -> GraphView:
         """
-        Keep only those edges whose source‐vertex layer == source_label
-        and whose target‐vertex layer == target_label (direction 'forward'),
-        or the reverse, or both, then prune any isolates.
+        Filter edges by their endpoint layers and return a pruned GraphView.
 
-        mode : {'forward','reverse','both'}
-          - 'forward':  source→target only  
-          - 'reverse': target→source only  
-          - 'both':    either direction 
+        This method selects edges whose source vertex's layer matches `source_label`
+        and whose target vertex's layer matches `target_label`, according to the
+        integer layer codes stored in the graph's 'layer_hash' vertex property.
+        You can choose one of three modes:
+
+        - forward: keep edges where source→target
+        - reverse: keep edges where target→source
+        - both:    keep edges in either direction
+
+        After filtering, any vertices that become isolated (no remaining incident edges)
+        are automatically pruned.
+
+        Parameters
+        ----------
+        source_label : str
+            Human-readable name of the layer for edge sources. Must exist in
+            self.core.layer_name_to_code, or a KeyError is raised.
+        target_label : str
+            Human-readable name of the layer for edge targets. Must exist in
+            self.core.layer_name_to_code, or a KeyError is raised.
+        mode : {'forward','reverse','both'}, optional
+            Which direction(s) to keep:
+            - 'forward': source→target only (default)
+            - 'reverse': target→source only
+            - 'both':    both directions
+
+        Returns
+        -------
+        GraphView
+            A filtered view of the underlying graph containing only the selected edges,
+            with any isolated vertices removed.
+
+        Raises
+        ------
+        KeyError
+            If source_label or target_label is not found in the layer-name mapping.
+        ValueError
+            If mode is not one of 'forward', 'reverse', or 'both'.
         """
         g = self.core.graph
 
@@ -531,7 +563,9 @@ class OnionNetSearcher:
                 (lh[e.source()] == tgt_code and lh[e.target()] == src_code)
             )
         else:
-            raise ValueError(f"mode must be 'forward', 'reverse' or 'both', not {mode!r}")
+            raise ValueError(
+                f"mode must be 'forward', 'reverse' or 'both', not {mode!r}"
+            )
 
         return self.filter_edges(pred)
 
@@ -543,25 +577,58 @@ class OnionNetSearcher:
         prop_name: str = "layer_decoded"
     ) -> GraphView:
         """
-        Bipartite view: all edges crossing between layer1 and layer2,
-        in either direction, then drop isolates.
+        Create a bipartite GraphView: all edges between two specified layers,
+        in either direction, then prune isolated vertices.
+
+        This picks up any edges connecting layer1 to layer2 (or vice versa)
+        and returns a view containing exactly those edges and their incident vertices.
+
+        If prop_name == 'layer_decoded' and that property does not exist,
+        it will be built on the fly by decoding the mandatory 'layer_hash'
+        via self.core.layer_code_to_name.
+
+        Parameters
+        ----------
+        layer1 : str
+            Human-readable name of the first layer; must exist in
+            self.core.layer_name_to_code, else KeyError.
+        layer2 : str
+            Human-readable name of the second layer; must exist in
+            self.core.layer_name_to_code, else KeyError.
+        prop_name : str, optional
+            Name of a vertex-property (string) that decodes layer_hash to names.
+            If 'layer_decoded' and not already present, it's generated on the fly.
+            Any other missing prop_name will cause KeyError.
+
+        Returns
+        -------
+        GraphView
+            A filtered, pruned view containing only cross-layer edges and
+            their vertices.
+
+        Raises
+        ------
+        KeyError
+            If prop_name is not 'layer_decoded' and not found in g.vp,
+            or if layer1 or layer2 are unknown.
         """
-        # if the user wants to filter by a string‐decoded prop, build it first
         g = self.core.graph
+
+        # ensure string decoding exists if requested
         if prop_name not in g.vp:
             if prop_name == "layer_decoded":
                 vp = g.new_vertex_property("string")
+                lh_map = g.vp['layer_hash']
                 for v in g.vertices():
-                    code = int(g.vp['layer_hash'][v])
+                    code = int(lh_map[v])
                     vp[v] = self.core.layer_code_to_name.get(code, f"Unknown({code})")
                 g.vp[prop_name] = vp
             else:
                 raise KeyError(f"Vertex property '{prop_name}' does not exist.")
 
-        # Now just treat it as “both”‐direction filter on the integer layer‐hash:
+        # just delegate to the 'both' mode of our new filter
         return self.filter_edges_between_categories(
             source_label=layer1,
             target_label=layer2,
             mode="both"
         )
-    
