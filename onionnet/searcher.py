@@ -2,7 +2,9 @@ from .core import OnionNetGraph
 from graph_tool.all import Graph, GraphView, PropertyMap, graph_draw, shortest_distance
 from graph_tool.topology import label_components
 from collections import deque
-from typing import List, Any, Union
+from typing import List, Any, Union, Callable
+
+from .property_manager import OnionNetPropertyManager
 
 """
 This module defines the OnionNetSearcher class, which provides functionality for graph traversal and subgraph extraction 
@@ -437,39 +439,161 @@ class OnionNetSearcher:
                 return GraphView(g, efilt=composite)
             else:
                 raise ValueError("must specify either 'v' or 'e' as type")
-            
+
+
+    def filter_edges(self,
+                     predicate: Callable, 
+                     return_view: bool = True
+                     ) -> GraphView:
+        """
+        Keep only those edges for which predicate(e) is True,
+        then prune any isolated vertices.
+
+        Parameters
+        ----------
+        predicate : Callable
+            A function taking a graph-tool Edge and returning True to keep it.
+        return_view : bool
+            If True, returns a GraphView; if False, returns the raw edge‐bool PropertyMap.
+
+        Returns
+        -------
+        GraphView or PropertyMap
+        """
+        g = self.core.graph        
+        efilt = g.new_edge_property("bool")
+        for e in g.edges():
+            efilt[e] = bool(predicate(e))
+        # note that this method above is safer than efilt.a = [predicate(e) for e in g.edges()] which doesn't gaurantee edge identity
+
+        if not return_view:
+            return efilt
+
+        gv_edges = GraphView(g, efilt=efilt)
+        return self._prune_isolated(gv_edges)
+    
+
+    def _prune_isolated(self, gv_edges):
+        """
+        Given a GraphView filtered on edges, drop any vertices
+        that now have degree zero in that view, using vectorized assignment.
+        """
+        g = gv_edges.graph if hasattr(gv_edges, 'graph') else self.core.graph
+        # compute degree in filtered view and get its array
+        deg_map = gv_edges.degree_property_map('total')
+        deg_arr = deg_map.a
+        # build boolean filter: True for vertices with degree > 0
+        vfilt = g.new_vertex_property('bool')
+        vfilt.a = deg_arr > 0
+        return GraphView(gv_edges, vfilt=vfilt)
+    
+
+    def filter_edges_between_categories(self,
+                                        source_label: str,
+                                        target_label: str
+                                        ) -> GraphView:
+        """
+        Create a subgraph containing only edges whose source‐vertex layer == source_label
+        and whose target‐vertex layer == target_label, then drop any isolated vertices.
+
+        If the graph has edge‐properties 'source_layer' and 'target_layer', we
+        do a single vectorized mask on those.  Otherwise we fall back to testing
+        each edge’s endpoints against layer_hash via the generic filter_edges.
+
+        Raises
+        ------
+        KeyError
+            If either source_label or target_label is not in layer_name_to_code.
+        """
+        g  = self.core.graph
+
+        # map human labels → integer layer‐codes (always present)
+        try:
+            src_code = self.core.layer_name_to_code[source_label]
+            tgt_code = self.core.layer_name_to_code[target_label]
+        except KeyError as e:
+            raise KeyError(f"Unknown layer name: {e.args[0]}")
+
+        # choose fast vectorized path if edge‐props exist
+        if 'source_layer' in g.ep and 'target_layer' in g.ep:
+            pm = OnionNetPropertyManager(self.core)
+            try:
+                src_e_code = pm.get_category_code('source_layer', source_label, dim='e')
+                tgt_e_code = pm.get_category_code('target_layer', target_label, dim='e')
+            except KeyError:
+                # no matching edges: return empty view
+                empty_ep = g.new_edge_property('bool')
+                gv_edges = GraphView(g, efilt=empty_ep)
+            else:
+                efilt = g.new_edge_property('bool')
+                efilt.a = (
+                    (g.ep.source_layer.a == src_e_code) &
+                    (g.ep.target_layer.a == tgt_e_code)
+                )
+                gv_edges = GraphView(g, efilt=efilt)
+
+        # fallback: test each edge via vertex layer_hash
+        else:
+            def pred(e):
+                lh = g.vp['layer_hash']
+                return (lh[e.source()] == src_code and
+                        lh[e.target()] == tgt_code)
+            # filter_edges will prune isolates
+            return self.filter_edges(pred)
+
+        # prune isolated vertices in vectorized branch
+        deg_map = gv_edges.degree_property_map('total')
+        vfilt   = g.new_vertex_property('bool')
+        vfilt.a = deg_map.a > 0
+        return GraphView(gv_edges, vfilt=vfilt)
+
+
     def create_bipartite_gv(self, layer1: str, layer2: str, prop_name: str = 'layer_decoded') -> GraphView:
         """
-        Create a bipartite GraphView that retains vertices whose specified property matches either layer1 or layer2,
-        and includes only edges connecting vertices between these two layers.
-        
-        Parameters:
-            layer1 (str): The first layer value (e.g., 'swisslipids').
-            layer2 (str): The second layer value (e.g., 'sl_chebi').
-            prop_name (str, optional): The vertex property used for filtering (default is 'layer_decoded').
-        
-        Returns:
-            GraphView: A filtered view of the graph containing only vertices in the specified layers and edges 
-            connecting vertices from different layers. Vertices without any incident edges in the filtered view are removed.
+        Create a bipartite subgraph containing only edges crossing between layer1 and layer2,
+        then drop any now-isolated vertices.
+
+        layer1, layer2 : str
+            Human-readable layer names.
+        prop_name : str
+            Vertex-property name (string) that decodes layer_hash to names.  If 'layer_decoded'
+            and it doesn't exist, it will be built on the fly from layer_hash + layer_code_to_name.
+
+        Returns
+        -------
+        GraphView
         """
         g = self.core.graph
+        # Ensure 'layer_decoded' exists if requested
+        if prop_name not in g.vp:
+            if prop_name == 'layer_decoded':
+                vp = g.new_vertex_property('string')
+                lh_map = g.vp['layer_hash']
+                for v in g.vertices():
+                    vp[v] = self.core.layer_code_to_name[int(lh_map[v])]
+                g.vp[prop_name] = vp
+            else:
+                raise KeyError(f"Vertex property '{prop_name}' does not exist.")
 
-        # Filter vertices based on the specified property.
-        initial_vfilt = lambda v: g.vp[prop_name][v] in {layer1, layer2}
+        # Map layer names → integer codes
+        try:
+            code1 = self.core.layer_name_to_code[layer1]
+            code2 = self.core.layer_name_to_code[layer2]
+        except KeyError as e:
+            raise KeyError(f"Unknown layer name: {e.args[0]}")
 
-        # Filter edges to retain only those connecting vertices from layer1 to layer2.
-        edge_filter = lambda e: (
-            (g.vp[prop_name][e.source()] == layer1 and g.vp[prop_name][e.target()] == layer2) or
-            (g.vp[prop_name][e.source()] == layer2 and g.vp[prop_name][e.target()] == layer1)
-        )
+        # Grab integer layer_hash array
+        lh = g.vp['layer_hash'].a
+        # Fetch edge endpoint pairs
+        edges = g.get_edges()
+        src_idx, tgt_idx = edges[:,0], edges[:,1]
 
-        # Create a GraphView applying both vertex and edge filters.
-        gv = GraphView(g, vfilt=initial_vfilt, efilt=edge_filter)
+        # Mask edges that cross exactly between the two codes
+        mask = ((lh[src_idx] == code1) & (lh[tgt_idx] == code2)) | ((lh[src_idx] == code2) & (lh[tgt_idx] == code1))
 
-        # Now define an additional vertex filter to keep only vertices that have at least one incident edge.
-        # I.e. filter out those that are isolated
-        vfilt_connected = lambda v: (v.out_degree() + v.in_degree()) > 0
+        # Apply vectorized filter
+        efilt = g.new_edge_property('bool')
+        efilt.a = mask
+        gv_edges = GraphView(g, efilt=efilt)
+        return self._prune_isolated(gv_edges)
 
-        # Create a second, nested GraphView applying the additional vertex filter.
-        gv2 = GraphView(gv, vfilt=vfilt_connected)
-        return gv2

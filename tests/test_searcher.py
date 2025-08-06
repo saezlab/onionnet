@@ -440,3 +440,295 @@ def test_create_bipartite_gv_invalid_prop(builder_and_core): # TODO: check if se
     s = OnionNetSearcher(core)
     with pytest.raises(KeyError):
         s.create_bipartite_gv("X","Y","does_not_exist")
+
+
+# --- Tests for filter_edges_between_categories ------------------------------
+
+def test_filter_edges_between_categories_basic(builder_and_core):
+    """
+    Only edges whose source_layer == L1 and target_layer == L2 should survive,
+    and only their endpoints should remain.
+    """
+    from onionnet.searcher import OnionNetSearcher
+
+    bldr, core = builder_and_core
+
+    # 1) Add three nodes: A@L1, B@L2, C@L1
+    import pandas as pd
+    df_n = pd.DataFrame({
+        "node_id":    ["A", "B", "C"],
+        "layer":      ["L1", "L2", "L1"],
+    })
+    bldr.add_vertices_from_dataframe(df_n, "node_id", "layer", drop_na=False)
+
+    # 2) Add three edges:
+    #    A(L1)→B(L2), C(L1)→B(L2)  (should match)
+    #    A(L1)→C(L1)               (should not match)
+    df_e = pd.DataFrame({
+        "source_id":     ["A",    "C",    "A"],
+        "source_layer":  ["L1",   "L1",   "L1"],
+        "target_id":     ["B",    "B",    "C"],
+        "target_layer":  ["L2",   "L2",   "L1"],
+    })
+    # we need source_layer and target_layer as edge props so filter can see them
+    bldr.add_edges_from_dataframe(
+        df_e,
+        "source_id", "source_layer",
+        "target_id",   "target_layer",
+        property_cols=["source_layer", "target_layer"],
+        drop_na=False
+    )
+
+    s = OnionNetSearcher(core)
+    gv = s.filter_edges_between_categories(
+        source_label="L1",
+        target_label="L2"
+    )
+
+    from graph_tool.all import GraphView
+    assert isinstance(gv, GraphView)
+
+    # Expect only the first two edges (A→B and C→B)
+    result_edges = {(int(e.source()), int(e.target())) for e in gv.edges()}
+    # node ordering is exactly in the order they were added: A=0, B=1, C=2
+    assert result_edges == {(0, 1), (2, 1)}
+
+    # Endpoints A, B, C should survive; no other vertices
+    assert set(int(v) for v in gv.vertices()) == {0, 1, 2}
+
+
+def test_filter_edges_between_categories_unknown_label_raises(builder_and_core):
+    """
+    Asking to filter by a label that doesn't exist in the mapping should KeyError.
+    """
+    from onionnet.searcher import OnionNetSearcher
+    import pandas as pd
+
+    bldr, core = builder_and_core
+    # add minimal nodes & one edge
+    df_n = pd.DataFrame({"node_id":["A","B"], "layer":["L1","L2"]})
+    bldr.add_vertices_from_dataframe(df_n, "node_id", "layer", drop_na=False)
+    df_e = pd.DataFrame({
+        "source_id":    ["A"], "source_layer":["L1"],
+        "target_id":    ["B"], "target_layer":["L2"],
+    })
+    bldr.add_edges_from_dataframe(
+        df_e,
+        "source_id","source_layer","target_id","target_layer",
+        property_cols=["source_layer","target_layer"],
+        drop_na=False
+    )
+
+    s = OnionNetSearcher(core)
+    # unknown source_label
+    with pytest.raises(KeyError):
+        s.filter_edges_between_categories(
+            source_label="DOES_NOT_EXIST",
+            target_label="L2"
+        )
+    # unknown target_label
+    with pytest.raises(KeyError):
+        s.filter_edges_between_categories(
+            source_label="L1",
+            target_label="XXX"
+        )
+
+
+# --- Tests for the new filter_edges and _prune_isolated helpers -----
+
+
+def test_filter_edges_return_prop_only(builder_and_core):
+    """
+    If return_view=False, filter_edges should hand back the raw EdgePropertyMap
+    and not a GraphView.
+    """
+    from onionnet.searcher import OnionNetSearcher
+
+    bldr, core = builder_and_core
+    # A→B→C chain
+    import pandas as pd
+    df_n = pd.DataFrame({"node_id":["A","B","C"],"layer":["0","0","0"]})
+    bldr.add_vertices_from_dataframe(df_n, "node_id","layer", drop_na=False)
+    df_e = pd.DataFrame({
+        "source_id":["A","B"],
+        "source_layer":["0","0"],
+        "target_id":["B","C"],
+        "target_layer":["0","0"],
+    })
+    bldr.add_edges_from_dataframe(
+        df_e,"source_id","source_layer","target_id","target_layer",
+        property_cols=None, drop_na=False
+    )
+
+    s = OnionNetSearcher(core)
+    # predicate: only keep the B→C edge (index 1)
+    prop = s.filter_edges(lambda e: int(e.source()) == 1, return_view=False)
+    assert not isinstance(prop, type(core.graph))  # raw property, not GraphView
+    # exactly one True entry in property map
+    kept = [prop[e] for e in core.graph.edges()]
+    assert sum(kept) == 1 and kept == [False, True]
+
+
+def test_filter_edges_prunes_isolated(builder_and_core):
+    """
+    filter_edges should drop any isolated vertices after edge filtering.
+    """
+    from onionnet.searcher import OnionNetSearcher
+
+    bldr, core = builder_and_core
+    # star graph: 0→1, 0→2
+    import pandas as pd
+    df_n = pd.DataFrame({"node_id":["A","B","C"], "layer":["0","0","0"]})
+    bldr.add_vertices_from_dataframe(df_n, "node_id","layer", drop_na=False)
+    df_e = pd.DataFrame({
+        "source_id":["A","A"], "source_layer":["0","0"],
+        "target_id":["B","C"], "target_layer":["0","0"]
+    })
+    bldr.add_edges_from_dataframe(df_e, "source_id","source_layer",
+                                  "target_id","target_layer",
+                                  property_cols=None, drop_na=False)
+    s = OnionNetSearcher(core)
+
+    # keep only the A→B edge
+    gv = s.filter_edges(lambda e: int(e.target()) == 1, return_view=True)
+    # B and A survive, but C (vertex 2) should have been pruned
+    assert set(int(v) for v in gv.vertices()) == {0, 1}
+    assert set((int(e.source()), int(e.target())) for e in gv.edges()) == {(0, 1)}
+
+
+def test_filter_edges_no_matches_yields_empty(builder_and_core):
+    """
+    If predicate never returns True, filter_edges should give an empty GraphView
+    (no edges, no vertices).
+    """
+    from onionnet.searcher import OnionNetSearcher
+
+    bldr, core = builder_and_core
+    # tiny 2‐node graph
+    import pandas as pd
+    df_n = pd.DataFrame({"node_id":["A","B"], "layer":["0","0"]})
+    bldr.add_vertices_from_dataframe(df_n, "node_id","layer", drop_na=False)
+    df_e = pd.DataFrame({
+        "source_id":["A"], "source_layer":["0"],
+        "target_id":["B"], "target_layer":["0"],
+    })
+    bldr.add_edges_from_dataframe(df_e, "source_id","source_layer",
+                                  "target_id","target_layer",
+                                  property_cols=None, drop_na=False)
+    s = OnionNetSearcher(core)
+
+    gv = s.filter_edges(lambda e: False, return_view=True)
+    assert gv.num_edges() == 0
+    assert gv.num_vertices() == 0
+
+
+# --- Tests for filter_edges_between_categories edge‐cases -----
+
+
+def test_filter_between_categories_mismatched_props(builder_and_core):
+    """
+    Even if no edge-level props exist, filtering by two valid layer labels
+    should still keep the A@X→B@Y edge.
+    """
+    from onionnet.searcher import OnionNetSearcher
+    import pandas as pd
+
+    bldr, core = builder_and_core
+    # minimal two‐node one‐edge
+    df_n = pd.DataFrame({"node_id": ["A","B"], "layer": ["X","Y"]})
+    bldr.add_vertices_from_dataframe(df_n, "node_id", "layer", drop_na=False)
+
+    # add the edge (but with no extra props)
+    df_e = pd.DataFrame({
+        "source_id":    ["A"],
+        "source_layer": ["X"],
+        "target_id":    ["B"],
+        "target_layer": ["Y"],
+    })
+    bldr.add_edges_from_dataframe(
+        df_e,
+        "source_id", "source_layer",
+        "target_id", "target_layer",
+        property_cols=None,
+        drop_na=False
+    )
+
+    s = OnionNetSearcher(core)
+    # X→Y is a valid layer‐pair, so the single edge should survive
+    gv = s.filter_edges_between_categories("X", "Y")
+    assert gv.num_edges() == 1
+    assert {int(v) for v in gv.vertices()} == {0, 1}
+
+
+def test_filter_between_categories_reversed(builder_and_core):
+    """
+    If called with swapped source/target labels, the predicate should only pick
+    the edges in that exact direction.
+    """
+    from onionnet.searcher import OnionNetSearcher
+
+    bldr, core = builder_and_core
+    # two‐node graph, A@L1→B@L2
+    import pandas as pd
+    df_n = pd.DataFrame({"node_id":["A","B"], "layer":["L1","L2"]})
+    bldr.add_vertices_from_dataframe(df_n, "node_id","layer", drop_na=False)
+    df_e = pd.DataFrame({
+        "source_id":["A"], "source_layer":["L1"],
+        "target_id":["B"], "target_layer":["L2"],
+    })
+    # add layer codes as props
+    bldr.add_edges_from_dataframe(df_e,
+        "source_id","source_layer","target_id","target_layer",
+        property_cols=["source_layer","target_layer"], drop_na=False)
+    s = OnionNetSearcher(core)
+
+    gv_forward = s.filter_edges_between_categories(
+        "L1","L2"
+    )
+    gv_backward = s.filter_edges_between_categories(
+        "L2","L1"
+    )
+    assert gv_forward.num_edges() == 1
+    assert gv_backward.num_edges() == 0
+
+
+# --- Tests for create_bipartite_gv isolated-vertex pruning -----
+
+
+def test_create_bipartite_prune_isolated(builder_and_core):
+    """
+    create_bipartite_gv should also prune vertices that end up isolated
+    (e.g. if only one endpoint matches).
+    """
+    from onionnet.searcher import OnionNetSearcher
+
+    bldr, core = builder_and_core
+    # three nodes of two layers, but only one cross‐edge
+    import pandas as pd
+    df_n = pd.DataFrame({
+        "node_id":["A","B","C"],
+        "layer":["L1","L2","L1"]
+    })
+    bldr.add_vertices_from_dataframe(df_n,"node_id","layer",drop_na=False)
+    # assign layer_decoded
+    lbl = core.graph.new_vertex_property("string")
+    for v in core.graph.vertices():
+        lbl[v] = core.layer_code_to_name[ core.graph.vp['layer_hash'][v] ]
+    core.graph.vp["layer_decoded"] = lbl
+
+    df_e = pd.DataFrame({
+        "source_id":["A","C"],
+        "source_layer":["L1","L1"],
+        "target_id":["B","A"],
+        "target_layer":["L2","L1"],
+    })
+    bldr.add_edges_from_dataframe(df_e,
+        "source_id","source_layer","target_id","target_layer",
+        property_cols=None, drop_na=False
+    )
+    s = OnionNetSearcher(core)
+
+    gv = s.create_bipartite_gv("L1","L2","layer_decoded")
+    # only A→B should survive, C and the self‐edge on A→A pruned
+    assert gv.num_edges() == 1
+    assert set(int(v) for v in gv.vertices()) == {0, 1}

@@ -1223,3 +1223,52 @@ def test_edge_summary_and_property_alignment_after_invalid_filtering(builder_and
     assert core.graph.num_edges() == 2
     strengths = sorted(core.graph.ep["strength"].a.tolist())
     assert strengths == [100, 300]
+
+
+# --- Tests for get_category_code ------------------------------------------
+
+def test_get_category_code_vertex_and_edge(pm_and_graph_simple):
+    """
+    get_category_code should return distinct integer codes for known categories
+    on both vertex and edge properties.
+    """
+    core, pm = pm_and_graph_simple
+
+    # vertex‐side: 'grp' has categories 'x' and 'y'
+    code_x = pm.get_category_code('grp', 'x', dim='v')
+    code_y = pm.get_category_code('grp', 'y', dim='v')
+    assert isinstance(code_x, int)
+    assert isinstance(code_y, int)
+    assert code_x != code_y
+
+    # edge‐side: 'lbl' has categories 'foo' and 'bar'
+    e_code_foo = pm.get_category_code('lbl', 'foo', dim='e')
+    e_code_bar = pm.get_category_code('lbl', 'bar', dim='e')
+    assert isinstance(e_code_foo, int)
+    assert isinstance(e_code_bar, int)
+    assert e_code_foo != e_code_bar
+
+@pytest.mark.parametrize("bad_dim", ["", "x", None])
+def test_get_category_code_invalid_dim_raises(access_core_pm, bad_dim):
+    """
+    Passing an invalid dim should raise ValueError.
+    """
+    core, pm = access_core_pm
+    with pytest.raises(ValueError):
+        pm.get_category_code('p', '1', dim=bad_dim)
+
+def test_get_category_code_unknown_prop_raises(access_core_pm):
+    """
+    Asking for a property that has no categorical mapping should raise KeyError.
+    """
+    core, pm = access_core_pm
+    with pytest.raises(KeyError):
+        pm.get_category_code('no_such_prop', 'anything', dim='v')
+
+def test_get_category_code_unknown_label_raises(pm_and_graph_simple):
+    """
+    Asking for a label not seen in the mapping should raise KeyError.
+    """
+    core, pm = pm_and_graph_simple
+    with pytest.raises(KeyError):
+        pm.get_category_code('grp', 'not_a_label', dim='v')

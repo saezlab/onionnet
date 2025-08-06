@@ -319,3 +319,39 @@ class OnionNetPropertyManager:
                 )
             else:
                 print(f"{orig} prop left as is, no decoding needed (not an object type)")
+
+
+    def get_category_code(self,
+                        prop_name: str,
+                        category_label: str,
+                        dim: str = 'v') -> int:
+        """
+        Look up the integer code for a categorical property value. 
+        This can then be used for lamda vertex (dim='v') or edge (dim='e') filtering.
+
+        Parameters
+        ----------
+        prop_name : str
+            The name of the property (vertex or edge) that is categorical.
+        category_label : str
+            The human-readable category label whose integer code you want.
+        dim : str, optional
+            'v' for a vertex property map, 'e' for an edge property map.
+
+        Returns
+        -------
+        int
+            The integer code for that category, or None if not present.
+        """
+        if dim == 'v':
+            cmap = self.core.vertex_categorical_mappings.get(prop_name, {}).get('str_to_int', {})
+        elif dim == 'e':
+            cmap = self.core.edge_categorical_mappings.get(prop_name, {}).get('str_to_int', {})
+        else:
+            raise ValueError("dim must be 'v' or 'e'")
+        
+        if cmap is None:
+            raise KeyError(f"No categorical mapping found for {dim}-prop '{prop_name}'")
+        if category_label not in cmap:
+            raise KeyError(f"Label '{category_label}' not seen for prop '{prop_name}'")
+        return cmap[category_label]

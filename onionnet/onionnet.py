@@ -120,6 +120,14 @@ class OnionNet:
             GraphView: A bipartite view of the graph.
         """
         return self.searcher.create_bipartite_gv(*args, **kwargs)
+    
+    def filter_edges_between_categories(self, *args, **kwargs):
+        """
+        High-level convenience: filter only those edges whose
+          source_layer==… AND target_layer==…,
+        and then prune isolated vertices.
+        """
+        return self.searcher.filter_edges_between_categories(*args, **kwargs)
 
     # Property-related API
     def get_vertex_by_encoding_tuple(self, *args, **kwargs):
@@ -185,6 +193,13 @@ class OnionNet:
         Delegates to the property manager's decode_property_labels_bulk method.
         """
         self.prop_manager.decode_property_labels_bulk(*args, **kwargs)
+
+    def get_category_code(self, *args, **kwargs) -> int:
+        """
+        Look up the integer code for a categorical property value
+        so you can build GraphView filters without digging into internals.
+        """
+        return self.prop_manager.get_category_code(prop_name, category_label, dim)
 
     @property
     def node_map(self) -> Dict[Tuple[str, str], int]:
