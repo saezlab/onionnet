@@ -2,7 +2,9 @@ from .core import OnionNetGraph
 from graph_tool.all import Graph, GraphView, PropertyMap, graph_draw, shortest_distance
 from graph_tool.topology import label_components
 from collections import deque
-from typing import List, Any, Union
+from typing import List, Any, Union, Callable
+
+from .property_manager import OnionNetPropertyManager
 
 """
 This module defines the OnionNetSearcher class, which provides functionality for graph traversal and subgraph extraction 
@@ -169,14 +171,14 @@ class OnionNetSearcher:
         """
         Perform a search on the graph to extract a subgraph within a specified distance from a starting node.
         
-        The search can be conducted in 'downstream', 'upstream', or bidirectional ('bi') mode. It computes the 
+        The search can be conducted in 'downstream', 'upstream', bidirectional ('bi'), or non-directed ('any') mode. It computes the 
         shortest distances from the starting vertex and returns a GraphView containing vertices within the specified 
         maximum distance. Optionally, the subgraph can be plotted.
         
         Parameters:
             start_node_idx (int, optional): The index of the starting vertex (default is 0).
             max_dist (int, optional): Maximum distance (in hops) from the starting vertex (default is 5).
-            direction (str, optional): Direction of search; 'downstream', 'upstream', or 'bi' for bidirectional (default is 'downstream').
+            direction (str, optional): Direction of search; 'downstream', 'upstream', 'bi' for bidirectional, or 'any' for non-directed (default is 'downstream').
             node_text_prop (str, optional): Vertex property to use for node labels in the plot (default is 'node_label').
             show_plot (bool, optional): If True, displays a plot of the filtered subgraph (default is True).
             include_upstream_children (bool, optional): For bidirectional search, if True, include additional upstream children (default is False).
@@ -199,6 +201,32 @@ class OnionNetSearcher:
             start_vertex = g.vertex(start_node_idx)
         except Exception as e:
             raise ValueError(f"Invalid start index {start_node_idx}: {e}")
+
+        if direction == 'any':
+            # create an undirected view of g
+            g_und = GraphView(g, directed=False)
+            # compute shortest‐path distances on undirected graph
+            distances = shortest_distance(g_und,
+                                        source=start_vertex,
+                                        max_dist=max_dist)
+            final = {v for v in g_und.vertices() if distances[v] <= max_dist}
+            if verbosity:
+                print("All-directions nodes:",
+                    [f"{int(v)} ({get_label(v)})" for v in final])
+
+            # wrap into GraphView, plot, and return
+            final_indices = {int(v) for v in final}
+            result = GraphView(g, vfilt=lambda v: int(v) in final_indices)
+            print(f"Filtered graph contains {result.num_vertices()} vertices and {result.num_edges()} edges.")
+            if show_plot:
+                if node_text_prop in g.vp:
+                    vertex_text = g.vp[node_text_prop]
+                else:
+                    vertex_text = g.new_vertex_property('string')
+                    for v in result.vertices():
+                        vertex_text[v] = str(int(v))
+                graph_draw(result, vertex_text=vertex_text, **kwargs)
+            return result
 
         upstream_nodes = set()
         downstream_nodes = set()
@@ -226,7 +254,7 @@ class OnionNetSearcher:
         elif direction == 'downstream':
             final = downstream_nodes
         else:
-            raise ValueError("Invalid direction; choose 'upstream', 'downstream', or 'bi'.")
+            raise ValueError("Invalid direction; choose 'upstream', 'downstream', 'bi', or 'any'.")
 
         final_indices = {int(v) for v in final}
         result = GraphView(g, vfilt=lambda v: int(v) in final_indices)
@@ -411,39 +439,196 @@ class OnionNetSearcher:
                 return GraphView(g, efilt=composite)
             else:
                 raise ValueError("must specify either 'v' or 'e' as type")
-            
-    def create_bipartite_gv(self, layer1: str, layer2: str, prop_name: str = 'layer_decoded') -> GraphView:
+
+
+    def filter_edges(self,
+                     predicate: Callable, 
+                     return_view: bool = True
+                     ) -> GraphView:
         """
-        Create a bipartite GraphView that retains vertices whose specified property matches either layer1 or layer2,
-        and includes only edges connecting vertices between these two layers.
-        
-        Parameters:
-            layer1 (str): The first layer value (e.g., 'swisslipids').
-            layer2 (str): The second layer value (e.g., 'sl_chebi').
-            prop_name (str, optional): The vertex property used for filtering (default is 'layer_decoded').
-        
-        Returns:
-            GraphView: A filtered view of the graph containing only vertices in the specified layers and edges 
-            connecting vertices from different layers. Vertices without any incident edges in the filtered view are removed.
+        Keep only those edges for which predicate(e) is True,
+        then prune any isolated vertices.
+
+        Parameters
+        ----------
+        predicate : Callable
+            A function taking a graph-tool Edge and returning True to keep it.
+        return_view : bool
+            If True, returns a GraphView; if False, returns the raw edge‐bool PropertyMap.
+
+        Returns
+        -------
+        GraphView or PropertyMap
+        """
+        g = self.core.graph        
+        efilt = g.new_edge_property("bool")
+        for e in g.edges():
+            efilt[e] = bool(predicate(e))
+        # note that this method above is safer than efilt.a = [predicate(e) for e in g.edges()] which doesn't gaurantee edge identity
+
+        if not return_view:
+            return efilt
+
+        gv_edges = GraphView(g, efilt=efilt)
+        return self._prune_isolated(gv_edges)
+    
+
+    def _prune_isolated(self, gv_edges):
+        """
+        Given a GraphView filtered on edges, drop any vertices
+        that now have degree zero in that view, using vectorized assignment.
+        """
+        g = gv_edges.graph if hasattr(gv_edges, 'graph') else self.core.graph
+        # compute degree in filtered view and get its array
+        deg_map = gv_edges.degree_property_map('total')
+        deg_arr = deg_map.a
+        # build boolean filter: True for vertices with degree > 0
+        vfilt = g.new_vertex_property('bool')
+        vfilt.a = deg_arr > 0
+        return GraphView(gv_edges, vfilt=vfilt)
+    
+
+    def filter_edges_between_categories(
+        self,
+        source_label: str,
+        target_label: str,
+        mode: str = "forward"
+    ) -> GraphView:
+        """
+        Filter edges by their endpoint layers and return a pruned GraphView.
+
+        This method selects edges whose source vertex's layer matches `source_label`
+        and whose target vertex's layer matches `target_label`, according to the
+        integer layer codes stored in the graph's 'layer_hash' vertex property.
+        You can choose one of three modes:
+
+        - forward: keep edges where source→target
+        - reverse: keep edges where target→source
+        - both:    keep edges in either direction
+
+        After filtering, any vertices that become isolated (no remaining incident edges)
+        are automatically pruned.
+
+        Parameters
+        ----------
+        source_label : str
+            Human-readable name of the layer for edge sources. Must exist in
+            self.core.layer_name_to_code, or a KeyError is raised.
+        target_label : str
+            Human-readable name of the layer for edge targets. Must exist in
+            self.core.layer_name_to_code, or a KeyError is raised.
+        mode : {'forward','reverse','both'}, optional
+            Which direction(s) to keep:
+            - 'forward': source→target only (default)
+            - 'reverse': target→source only
+            - 'both':    both directions
+
+        Returns
+        -------
+        GraphView
+            A filtered view of the underlying graph containing only the selected edges,
+            with any isolated vertices removed.
+
+        Raises
+        ------
+        KeyError
+            If source_label or target_label is not found in the layer-name mapping.
+        ValueError
+            If mode is not one of 'forward', 'reverse', or 'both'.
         """
         g = self.core.graph
 
-        # Filter vertices based on the specified property.
-        initial_vfilt = lambda v: g.vp[prop_name][v] in {layer1, layer2}
+        try:
+            src_code = self.core.layer_name_to_code[source_label]
+            tgt_code = self.core.layer_name_to_code[target_label]
+        except KeyError as e:
+            raise KeyError(f"Unknown layer name: {e.args[0]}")
 
-        # Filter edges to retain only those connecting vertices from layer1 to layer2.
-        edge_filter = lambda e: (
-            (g.vp[prop_name][e.source()] == layer1 and g.vp[prop_name][e.target()] == layer2) or
-            (g.vp[prop_name][e.source()] == layer2 and g.vp[prop_name][e.target()] == layer1)
+        lh = g.vp['layer_hash']
+
+        if mode == "forward":
+            pred = lambda e: (
+                lh[e.source()] == src_code
+                and lh[e.target()] == tgt_code
+            )
+        elif mode == "reverse":
+            pred = lambda e: (
+                lh[e.source()] == tgt_code
+                and lh[e.target()] == src_code
+            )
+        elif mode == "both":
+            pred = lambda e: (
+                (lh[e.source()] == src_code and lh[e.target()] == tgt_code)
+                or
+                (lh[e.source()] == tgt_code and lh[e.target()] == src_code)
+            )
+        else:
+            raise ValueError(
+                f"mode must be 'forward', 'reverse' or 'both', not {mode!r}"
+            )
+
+        return self.filter_edges(pred)
+
+
+    def create_bipartite_gv(
+        self,
+        layer1: str,
+        layer2: str,
+        prop_name: str = "layer_decoded"
+    ) -> GraphView:
+        """
+        Create a bipartite GraphView: all edges between two specified layers,
+        in either direction, then prune isolated vertices.
+
+        This picks up any edges connecting layer1 to layer2 (or vice versa)
+        and returns a view containing exactly those edges and their incident vertices.
+
+        If prop_name == 'layer_decoded' and that property does not exist,
+        it will be built on the fly by decoding the mandatory 'layer_hash'
+        via self.core.layer_code_to_name.
+
+        Parameters
+        ----------
+        layer1 : str
+            Human-readable name of the first layer; must exist in
+            self.core.layer_name_to_code, else KeyError.
+        layer2 : str
+            Human-readable name of the second layer; must exist in
+            self.core.layer_name_to_code, else KeyError.
+        prop_name : str, optional
+            Name of a vertex-property (string) that decodes layer_hash to names.
+            If 'layer_decoded' and not already present, it's generated on the fly.
+            Any other missing prop_name will cause KeyError.
+
+        Returns
+        -------
+        GraphView
+            A filtered, pruned view containing only cross-layer edges and
+            their vertices.
+
+        Raises
+        ------
+        KeyError
+            If prop_name is not 'layer_decoded' and not found in g.vp,
+            or if layer1 or layer2 are unknown.
+        """
+        g = self.core.graph
+
+        # ensure string decoding exists if requested
+        if prop_name not in g.vp:
+            if prop_name == "layer_decoded":
+                vp = g.new_vertex_property("string")
+                lh_map = g.vp['layer_hash']
+                for v in g.vertices():
+                    code = int(lh_map[v])
+                    vp[v] = self.core.layer_code_to_name.get(code, f"Unknown({code})")
+                g.vp[prop_name] = vp
+            else:
+                raise KeyError(f"Vertex property '{prop_name}' does not exist.")
+
+        # just delegate to the 'both' mode of our new filter
+        return self.filter_edges_between_categories(
+            source_label=layer1,
+            target_label=layer2,
+            mode="both"
         )
-
-        # Create a GraphView applying both vertex and edge filters.
-        gv = GraphView(g, vfilt=initial_vfilt, efilt=edge_filter)
-
-        # Now define an additional vertex filter to keep only vertices that have at least one incident edge.
-        # I.e. filter out those that are isolated
-        vfilt_connected = lambda v: (v.out_degree() + v.in_degree()) > 0
-
-        # Create a second, nested GraphView applying the additional vertex filter.
-        gv2 = GraphView(gv, vfilt=vfilt_connected)
-        return gv2

@@ -16,6 +16,8 @@ import os
 import pandas as pd
 from graph_tool.all import sfdp_layout
 
+import warnings
+
 """
 This module provides visualization utilities for the OnionNet project. It includes functions for generating graph layouts, 
 assigning colors and shapes to nodes and edges based on their properties, drawing weight propagation graphs, and creating legends. 
@@ -352,8 +354,12 @@ def get_legend(source, prop=None, ordered_cats=None, verbose=False, mode=None, c
             norm = plt.Normalize(vmin=min_val, vmax=max_val)
             sm = cm.ScalarMappable(norm=norm, cmap=cmap)
             sm.set_array([])
-            plt.figure(figsize=(6, 1))
-            cbar = plt.colorbar(sm, orientation='horizontal')
+            # Create a Figure + Axes so colorbar() knows where to draw
+            fig, ax = plt.subplots(figsize=(6, 1))
+            # Attach the colorbar to that Axes
+            cbar = fig.colorbar(sm, ax=ax, orientation='horizontal')
+            # (Optionally hide the empty image Axes if you just want the bar)
+            ax.remove()
             cbar.set_label(prop.capitalize() if prop else "Value")
             plt.show()
             return
@@ -387,8 +393,12 @@ def get_legend(source, prop=None, ordered_cats=None, verbose=False, mode=None, c
             norm = plt.Normalize(vmin=min_val, vmax=max_val)
             sm = cm.ScalarMappable(norm=norm, cmap=cmap)
             sm.set_array([])
-            plt.figure(figsize=(6, 1))
-            cbar = plt.colorbar(sm, orientation='horizontal')
+            # Create a Figure + Axes so colorbar() knows where to draw
+            fig, ax = plt.subplots(figsize=(6, 1))
+            # Attach the colorbar to that Axes
+            cbar = fig.colorbar(sm, ax=ax, orientation='horizontal')
+            # (Optionally hide the empty image Axes if you just want the bar)
+            ax.remove()
             cbar.set_label(prop.capitalize() if prop else "Value")
             plt.show()
             return
@@ -631,112 +641,89 @@ def bipartite_ordered_layout(
 
 def load_or_compute_layout(g, filename, override=False, inject=None):
     """
-    Loads vertex layout coordinates from a TSV file if it exists (and override is False), 
-    or computes/injects them and saves them to the file.
-
-    The TSV file is expected to have the following key columns:
-      - Either: layer_hash and node_id_hash (primary keys)
-      - Or: v_int (if layer and node hash are not available)
-      - Additionally, x and y for coordinates.
-
-    Parameters
-    ----------
-    g : graph_tool.Graph
-        The graph for which the layout is needed.
-    filename : str
-        The path to the TSV file where layout coordinates are stored or should be saved.
-    override : bool, optional
-        If True, recompute/inject the layout even if the file already exists and update the file. Default is False.
-    inject : None, callable, or a precomputed layout, optional
-        If provided, use this layout instead of computing via sfdp_layout. If callable, it should accept the graph `g`
-        and return a layout (vertex property map). Otherwise, it should be a layout that maps vertices to [x, y] coordinates.
-
-    Returns
-    -------
-    pos : graph_tool.VertexPropertyMap
-        A vertex property map containing the 2D coordinates for each vertex.
+    Load or compute a 2D layout for g, keyed by either
+    ('layer_decoded','node_id_decoded') if available, else
+    ('layer_hash','node_id_hash').  Round-trips whatever keys you have.
     """
-    # Determine the key type based on graph properties
-    if "layer_hash" in g.vp and "node_id_hash" in g.vp:
-        key_type = "hash"
-    elif "v_int" in g.vp:
-        key_type = "v_int"
-    else:
-        raise ValueError("Graph does not have the required key properties ('layer_hash' and 'node_id_hash', or 'v_int').")
-    
-    # Use the injected layout if provided
+    # --- 1) Validate/choose key props ---
+    # Preferred human-readable keys:
+    use_decoded = ("layer_decoded" in g.vp) and ("node_id_decoded" in g.vp)
+    # Fallback keys must always exist:
+    if not use_decoded:
+        if "layer_hash" not in g.vp or "node_id_hash" not in g.vp:
+            raise ValueError("Graph must have either decoded props or both 'layer_hash' & 'node_id_hash'.")
+    key_cols = (("layer_decoded","node_id_decoded") if use_decoded
+                else ("layer_hash","node_id_hash"))
+
+    # helper to write out a DataFrame
+    def _write_df(pos):
+        rows = []
+        for v in g.vertices():
+            row = {"x": pos[v][0], "y": pos[v][1]}
+            # add whichever keys we chose
+            for col in key_cols:
+                # cast to Python type for CSV
+                val = g.vp[col][v]
+                row[col] = int(val) if isinstance(val, (int,)) else val
+            rows.append(row)
+        df = pd.DataFrame(rows)
+        df.to_csv(filename, sep="\t", index=False)
+
+    # --- 2) injection branch ---
     if inject is not None:
         pos = inject(g) if callable(inject) else inject
-        
-        data = []
+        _write_df(pos)
+        print(f"[inject] Saved layout for {len(list(g.vertices()))} vertices → {filename}")
+        return pos
+
+    # --- 3) load-from-disk if possible ---
+    if os.path.exists(filename) and not override:
+        df = pd.read_csv(filename, sep="\t")
+        # determine which key set the file has
+        if all(c in df.columns for c in ("layer_decoded","node_id_decoded")):
+            file_keys = ("layer_decoded","node_id_decoded")
+        elif all(c in df.columns for c in ("layer_hash","node_id_hash")):
+            file_keys = ("layer_hash","node_id_hash")
+        else:
+            raise ValueError("TSV missing both decoded and hash key columns.")
+
+        # build lookup from file
+        lookup = {
+            (row[file_keys[0]], row[file_keys[1]]): row
+            for _, row in df.iterrows()
+        }
+        # warn about mismatches
+        graph_keys = set()
         for v in g.vertices():
-            row = {}
-            if key_type == "hash":
-                row["layer_hash"] = g.vp["layer_hash"][v]
-                row["node_id_hash"] = g.vp["node_id_hash"][v]
-            else:
-                row["v_int"] = int(g.vp["v_int"][v])
-            x, y = pos[v]
-            row["x"] = x
-            row["y"] = y
-            data.append(row)
-        df = pd.DataFrame(data)
-        df.to_csv(filename, sep="\t", index=False)
-        print(f"Injected layout saved for {len(data)} vertices to {filename}")
-    
-    # If no injection is provided, try to load from file if it exists and override is False.
-    elif os.path.exists(filename) and not override:
-        df = pd.read_csv(filename, delimiter="\t")
+            key = tuple(g.vp[c][v] for c in file_keys)
+            graph_keys.add(key)
+        file_keyset = set(lookup.keys())
+        extra_in_file  = file_keyset - graph_keys
+        extra_in_graph = graph_keys - file_keyset
+        if extra_in_file:
+            warnings.warn(f"{len(extra_in_file)} keys in TSV not in graph: {extra_in_file}")
+        if extra_in_graph:
+            warnings.warn(f"{len(extra_in_graph)} graph vertices missing in TSV: {extra_in_graph}")
+
+        # build pos
         pos = g.new_vertex_property("vector<double>")
-        # Determine key type based on file columns
-        if "layer_hash" in df.columns and "node_id_hash" in df.columns:
-            file_key = "hash"
-        elif "v_int" in df.columns:
-            file_key = "v_int"
-        else:
-            raise ValueError("TSV file does not have the required key columns.")
-        
         for v in g.vertices():
-            if file_key == "hash":
-                lh = g.vp["layer_hash"][v]
-                nid = g.vp["node_id_hash"][v]
-                row = df[(df["layer_hash"] == lh) & (df["node_id_hash"] == nid)]
-                if row.empty:
-                    raise ValueError(f"No saved layout information found for vertex with layer_hash {lh} and node_id_hash {nid}.")
-            else:
-                v_int = int(g.vp["v_int"][v])
-                row = df[df["v_int"] == v_int]
-                if row.empty:
-                    raise ValueError(f"No saved layout information found for vertex with v_int {v_int}.")
-            x = float(row.iloc[0]["x"])
-            y = float(row.iloc[0]["y"])
-            pos[v] = [x, y]
-        print(f"Loaded layout for {len(df)} vertices from {filename}")
-    
-    # Otherwise, compute the layout using sfdp_layout.
-    else:
-        pos = sfdp_layout(g)
-        
-        data = []
-        for v in g.vertices():
-            row = {}
-            if key_type == "hash":
-                row["layer_hash"] = g.vp["layer_hash"][v]
-                row["node_id_hash"] = g.vp["node_id_hash"][v]
-            else:
-                row["v_int"] = int(g.vp["v_int"][v])
-            x, y = pos[v]
-            row["x"] = x
-            row["y"] = y
-            data.append(row)
-        df = pd.DataFrame(data)
-        df.to_csv(filename, sep="\t", index=False)
-        if override:
-            print(f"Override enabled: Computed and saved new layout for {len(data)} vertices to {filename}")
-        else:
-            print(f"Computed and saved layout for {len(data)} vertices to {filename}")
-    
+            key = tuple(g.vp[c][v] for c in file_keys)
+            if key not in lookup:
+                raise ValueError(f"No layout in TSV for vertex {key}")
+            row = lookup[key]
+            pos[v] = (float(row.x), float(row.y))
+
+        print(f"[load]   Loaded layout for {len(df)} rows from {filename}")
+        return pos
+
+    # --- 4) compute new layout ---
+    pos = sfdp_layout(g)
+    _write_df(pos)
+    verb = "Overrode" if override else "Computed"
+    print(f"[{verb}] Saved layout for {len(list(g.vertices()))} vertices → {filename}")
     return pos
+
 
 def prop_to_size(g, prop, mi=1, ma=8, power=1, transform_func=None, mode='v'):
     """

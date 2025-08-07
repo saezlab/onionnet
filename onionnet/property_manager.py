@@ -210,11 +210,26 @@ class OnionNetPropertyManager:
         
         if new_prop_name is None:
             new_prop_name = f"{encoded_prop_name}_decoded"
-        
+
+        if encoded_prop_type == 'v' and encoded_prop_name in self.core.edge_categorical_mappings:
+            raise ValueError(f"Property '{encoded_prop_name}' is an edge property, cannot decode as vertex.")
+        if encoded_prop_type == 'e' and encoded_prop_name in self.core.vertex_categorical_mappings:
+            raise ValueError(f"Property '{encoded_prop_name}' is a vertex property, cannot decode as edge.")
+
         if mapping_dict is None:
             if encoded_prop_type == 'v':
+                # property must exist
+                if encoded_prop_name not in self.core.graph.vp:
+                    raise KeyError(f"Vertex property '{encoded_prop_name}' does not exist.")
+                # must be categorical
+                if encoded_prop_name not in self.core.vertex_categorical_mappings:
+                    raise ValueError(f"Vertex property '{encoded_prop_name}' is not categorical and cannot be decoded.")
                 mapping_dict = self.core.vertex_categorical_mappings[encoded_prop_name]['int_to_str']
-            else:
+            else:  # edge
+                if encoded_prop_name not in self.core.graph.ep:
+                    raise KeyError(f"Edge property '{encoded_prop_name}' does not exist.")
+                if encoded_prop_name not in self.core.edge_categorical_mappings:
+                    raise ValueError(f"Edge property '{encoded_prop_name}' is not categorical and cannot be decoded.")
                 mapping_dict = self.core.edge_categorical_mappings[encoded_prop_name]['int_to_str']
         
         # Retrieve the encoded property based on dimension
@@ -304,3 +319,39 @@ class OnionNetPropertyManager:
                 )
             else:
                 print(f"{orig} prop left as is, no decoding needed (not an object type)")
+
+
+    def get_category_code(self,
+                        prop_name: str,
+                        category_label: str,
+                        dim: str = 'v') -> int:
+        """
+        Look up the integer code for a categorical property value. 
+        This can then be used for lamda vertex (dim='v') or edge (dim='e') filtering.
+
+        Parameters
+        ----------
+        prop_name : str
+            The name of the property (vertex or edge) that is categorical.
+        category_label : str
+            The human-readable category label whose integer code you want.
+        dim : str, optional
+            'v' for a vertex property map, 'e' for an edge property map.
+
+        Returns
+        -------
+        int
+            The integer code for that category, or None if not present.
+        """
+        if dim == 'v':
+            cmap = self.core.vertex_categorical_mappings.get(prop_name, {}).get('str_to_int', {})
+        elif dim == 'e':
+            cmap = self.core.edge_categorical_mappings.get(prop_name, {}).get('str_to_int', {})
+        else:
+            raise ValueError("dim must be 'v' or 'e'")
+        
+        if cmap is None:
+            raise KeyError(f"No categorical mapping found for {dim}-prop '{prop_name}'")
+        if category_label not in cmap:
+            raise KeyError(f"Label '{category_label}' not seen for prop '{prop_name}'")
+        return cmap[category_label]

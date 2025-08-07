@@ -1,4 +1,4 @@
-# OnionNet <img src="./.assets/.onionnet_logo_v0c.png" alt="OnionNet Logo" width="120" align="right" />
+# OnionNet <img src="./docs/source/_static/.onionnet_logo_v0c.png" alt="OnionNet Logo" width="120" align="right" />
 ---
 > A graph-tool wrapper for handling large multi-layered networks
 
