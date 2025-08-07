@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="onionnet",
-    version="1.0.0",
+    version="1.1.0",
     description="A package for creating and analysing large mulilayered networks using graph-tool.",
     author="Macabe Daley",
     author_email="***",
