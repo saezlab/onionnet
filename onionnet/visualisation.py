@@ -16,6 +16,9 @@ import os
 import pandas as pd
 from graph_tool.all import sfdp_layout
 
+from itertools import zip_longest
+from graph_tool.all import Graph, GraphView
+
 import warnings
 
 """
@@ -275,6 +278,70 @@ def add_halo_to_node(
             v_halo_color[v] = halo_color
         else:  # No halo for other nodes
             v_halo[v] = False #(0, 0, 0, 0)  # Transparent / no halo
+
+    return {"v_halo": v_halo, "v_halo_color": v_halo_color}
+
+
+def add_halos_to_nodes(
+    g,
+    nodes,
+    colors=None,
+    default_color=(1.0, 1.0, 0.0, 0.6),
+    prop_name_halo="v_halo",
+    prop_name_color="v_halo_color",
+):
+    """
+    Create per-vertex halo + halo-color property maps for one or more nodes.
+
+    Parameters
+    ----------
+    g : Graph or GraphView
+        The graph you will draw.
+    nodes : sequence of Vertex or int
+        Vertices to highlight. (If you pass ints, they are treated as vertex indices.)
+    colors : sequence of RGBA tuples, optional
+        Per-node halo colors; if fewer than nodes, `default_color` is used for the rest.
+    default_color : tuple
+        Fallback RGBA.
+    prop_name_halo : str
+        Name to assign the boolean halo map into g.vp.
+    prop_name_color : str
+        Name to assign the vector<double> color map into g.vp.
+
+    Returns
+    -------
+    dict
+        {"v_halo": halo_bool_map, "v_halo_color": halo_color_map}
+    """
+    # Use the underlying base graph so property arrays line up correctly
+    base = g
+
+    v_halo       = base.new_vertex_property("bool")
+    v_halo_color = base.new_vertex_property("vector<double>")
+
+    # default: no halos
+    v_halo.a[:] = False
+
+    # Helper to coerce ints/Vertices to a Vertex on the *base* graph
+    def _as_vertex(x):
+        try:
+            return base.vertex(int(x))
+        except Exception:
+            # assume it's already a Vertex from this graph
+            return x
+
+    # Assign per-node flags + colors
+    for node, color in zip_longest(nodes, colors or [], fillvalue=default_color):
+        v = _as_vertex(node)
+        v_halo[v] = True
+        v_halo_color[v] = color
+
+    # Attach to the base graph’s vp (and also to the view’s vp for convenience)
+    base.vp[prop_name_halo]  = v_halo
+    base.vp[prop_name_color] = v_halo_color
+    if isinstance(g, GraphView):
+        g.vp[prop_name_halo]  = v_halo
+        g.vp[prop_name_color] = v_halo_color
 
     return {"v_halo": v_halo, "v_halo_color": v_halo_color}
 
