@@ -828,3 +828,107 @@ def test_create_bipartite_gv_is_symmetric(builder_and_core):
     v12 = {int(v) for v in gv12.vertices()}
     v21 = {int(v) for v in gv21.vertices()}
     assert v12 == v21 == {0,1,2}
+
+
+#### Tests for compute_on_shortest with directed/undirected shortcuts ----
+
+
+def test_on_shortest_directed_vs_undirected_shortcut():
+    # A->B->C->D, plus a reverse edge D->B
+    # Directed A→D shortest: A-B-C-D (len=3) → {A,B,C,D}
+    # Undirected shortest: A-B-D via B–D (len=2) → {A,B,D}
+    core = OnionNetGraph(directed=True)
+    b = OnionNetBuilder(core)
+    b.add_vertices_from_dataframe(
+        pd.DataFrame({"node_id":["A","B","C","D"], "layer":["0"]*4}),
+        "node_id","layer", drop_na=False
+    )
+    b.add_edges_from_dataframe(
+        pd.DataFrame({
+            "source_id":["A","B","C","D"],
+            "source_layer":["0","0","0","0"],
+            "target_id":["B","C","D","B"],  # reverse-only shortcut
+            "target_layer":["0","0","0","0"],
+        }),
+        "source_id","source_layer","target_id","target_layer",
+        property_cols=None, drop_na=False
+    )
+
+    s = OnionNetSearcher(core)
+    gv_dir   = s.compute_on_shortest(source=0, targets=[3], directed=True,  return_gv=True)
+    gv_undir = s.compute_on_shortest(source=0, targets=[3], directed=False, return_gv=True)
+
+    assert {int(v) for v in gv_dir.vertices()}   == {0,1,2,3}
+    assert {int(v) for v in gv_undir.vertices()} == {0,1,3}
+
+
+def test_on_shortest_reverse_only_path_unreachable_directed():
+    # Only edges C->B and B->A; from A to C:
+    # directed=True: unreachable → empty view
+    # directed=False: A–B–C reachable → {A,B,C}
+    core = OnionNetGraph(directed=True)
+    b = OnionNetBuilder(core)
+    b.add_vertices_from_dataframe(
+        pd.DataFrame({"node_id":["A","B","C"], "layer":["0","0","0"]}),
+        "node_id","layer", drop_na=False
+    )
+    b.add_edges_from_dataframe(
+        pd.DataFrame({
+            "source_id":["C","B"], "source_layer":["0","0"],
+            "target_id":["B","A"], "target_layer":["0","0"],
+        }),
+        "source_id","source_layer","target_id","target_layer",
+        property_cols=None, drop_na=False
+    )
+
+    s = OnionNetSearcher(core)
+    gv_dir   = s.compute_on_shortest(source=0, targets=[2], directed=True,  return_gv=True)
+    gv_undir = s.compute_on_shortest(source=0, targets=[2], directed=False, return_gv=True)
+
+    assert sum(1 for _ in gv_dir.vertices()) == 0
+    assert {int(v) for v in gv_undir.vertices()} == {0,1,2}
+
+
+def test_on_shortest_multi_target_undirected_union():
+    # Chain A-B-C-D plus E attached to C.
+    # From A to {D,E} undirected: union {A,B,C,D,E}
+    core = OnionNetGraph(directed=True)
+    b = OnionNetBuilder(core)
+    b.add_vertices_from_dataframe(
+        pd.DataFrame({"node_id":["A","B","C","D","E"], "layer":["0"]*5}),
+        "node_id","layer", drop_na=False
+    )
+    b.add_edges_from_dataframe(
+        pd.DataFrame({
+            "source_id":["A","B","C","C"],
+            "source_layer":["0","0","0","0"],
+            "target_id":["B","C","D","E"],
+            "target_layer":["0","0","0","0"],
+        }),
+        "source_id","source_layer","target_id","target_layer",
+        property_cols=None, drop_na=False
+    )
+
+    s = OnionNetSearcher(core)
+    gv = s.compute_on_shortest(source=0, targets=[3,4], directed=False, return_gv=True)
+    assert {int(v) for v in gv.vertices()} == {0,1,2,3,4}
+
+
+def test_on_shortest_accepts_name_tuples_and_directed_flag():
+    core = OnionNetGraph(directed=True)
+    b = OnionNetBuilder(core)
+    b.add_vertices_from_dataframe(
+        pd.DataFrame({"node_id":["A","B"], "layer":["L","L"]}),
+        "node_id","layer", drop_na=False
+    )
+    b.add_edges_from_dataframe(
+        pd.DataFrame({
+            "source_id":["A"], "source_layer":["L"],
+            "target_id":["B"], "target_layer":["L"],
+        }),
+        "source_id","source_layer","target_id","target_layer",
+        property_cols=None, drop_na=False
+    )
+    s = OnionNetSearcher(core)
+    gv = s.compute_on_shortest(source=("L","A"), targets=[("L","B")], directed=False, return_gv=True)
+    assert {int(v) for v in gv.vertices()} == {0,1}
