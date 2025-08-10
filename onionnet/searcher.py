@@ -26,99 +26,86 @@ class OnionNetSearcher:
             core (OnionNetGraph): The core graph object that will be used for searching and traversal operations.
         """
         self.core = core
+        self.pm = OnionNetPropertyManager(core)
 
-    def compute_on_shortest(self, source_idx: int, target_indices: List[int], inplace: bool = False, g: Graph = None, return_gv: bool = False):
+    def _coerce_to_idx(self, x):
+        """Accept int/Vertex or (layer_name, node_id_str) and return int index."""
+        # int or graph-tool Vertex?
+        try:
+            return int(x)
+        except Exception:
+            pass
+        # (layer_name, node_id_str)?
+        if isinstance(x, tuple) and len(x) == 2:
+            v = self.pm.get_vertex_by_name_tuple(layer_name=x[0], node_id_str=x[1])
+            if v is None:
+                raise ValueError(f"Vertex {x!r} not found.")
+            return int(v)
+        raise TypeError("source/targets must be int/Vertex or (layer_name, node_id_str) tuple.")
+
+    def compute_on_shortest(self, source, targets, return_gv: bool = True, inplace: bool = True, g: Graph = None):
         """
-        Compute and return a Boolean vertex property 'on_shortest' for vertices that lie on some shortest path
-        from the vertex at source_idx to any vertex in target_indices in an unweighted directed graph.
-        
-        The function performs the following steps:
-          1. Computes forward distances from the source vertex.
-          2. Computes reverse distances using a reversed graph view and an artificial source vertex.
-          3. Marks vertices that lie on a shortest path if the sum of forward and reverse distances matches 
-             a target's distance.
-        
-        Parameters:
-            source_idx (int): The index of the source vertex.
-            target_indices (List[int]): A list of target vertex indices.
-            inplace (bool, optional): If False (default), the computation is done on a copy of the graph; if True, 
-                                      the computation is performed in-place on the original graph.
-            g (Graph, optional): An optional graph to operate on; defaults to self.core.graph if not provided.
-            return_gv (bool, optional): If True, returns a GraphView filtered by the computed property; otherwise,
-                                        returns the Boolean property map.
-        
-        Returns:
-            Union[GraphView, PropertyMap]: A GraphView if return_gv is True, or the Boolean property map otherwise.
-        
-        Raises:
-            ValueError: If the source index or any target index is invalid.
+        Quickly mark nodes on *any* shortest path from a single source to one or more targets
+        in a large directed (unweighted) graph, without copying the graph or adding vertices.
+
+        1. Coerce source / targets to integer vertex indices.
+        2. Run one forward BFS from the source.
+        3. Run one reverse-view BFS *per target* (or single if only one).
+        4. Mark v “on_shortest” if forward_dist[v] + reverse_dist[v] == dist_to_target.
+        5. Optionally return a GraphView filtered by that boolean map.
+
+        Complexity: O((V+E) + T*(V+E)) where T = len(target_indices).  
+        For a single target it's just two BFS passes: ~O(V+E).
+
+        Examples:
+        ### With layer names and node IDs:
+        >>> searcher.compute_on_shortest(source=(layer_name, node_id_str), targets=[(layer_name, node_id_str), ...])
+        e.g.
+        >>> searcher.compute_on_shortest(source=('layer1', 'nodeA'), targets=[('layer2', 'nodeB'), ('layer3', 'nodeC')])
+        ### Or with integer indices:
+        >>> searcher.compute_on_shortest(source=vertex_index, targets=[vertex_index, ...])
+        e.g.
+        >>> searcher.compute_on_shortest(source=42, targets=[43, 44])
         """
         g = g or self.core.graph
         if not inplace:
-            g_temp = g.copy()
+            g = g.copy()
+
+        # 1) coerce any labels or Vertex → int, else error
+        # resolve inputs via PropertyManager
+        source_idx = self._coerce_to_idx(source)
+        target_indices = [self._coerce_to_idx(t) for t in (targets if isinstance(targets, (list, tuple)) else [targets])]
+
+        # 2) forward BFS from source
+        forward_dist = shortest_distance(g, source=g.vertex(source_idx), directed=True)
+
+        # 3) reverse‐view BFS back from each target
+        g_rev = GraphView(g, directed=True)
+        g_rev.set_reversed(True)
+
+        inf = float("inf")
+        if len(target_indices) == 1:
+            reverse_dist = shortest_distance(g_rev, source=g_rev.vertex(target_indices[0]), directed=True)
         else:
-            g_temp = g
+            rev_min = g.new_vertex_property("double")
+            rev_min.a[:] = inf
+            for t in target_indices:
+                d = shortest_distance(g_rev, source=g_rev.vertex(t), directed=True)
+                rev_min.a = np.minimum(rev_min.a, d.a)
+            reverse_dist = rev_min
 
-        try:
-            source = g_temp.vertex(source_idx)
-        except Exception as e:
-            raise ValueError(f"Invalid source index {source_idx}: {e}")
-        targets = []
-        for idx in target_indices:
-            try:
-                targets.append(g_temp.vertex(idx))
-            except Exception as e:
-                raise ValueError(f"Invalid target index {idx}: {e}")
+        # 4) collect the target‐distance set
+        dist_targets = { forward_dist[g.vertex(t)] for t in target_indices }
 
-        # Phase 1: Compute forward distances from the source.
-        forward_dist = shortest_distance(g_temp, source=source)
+        # 5) build the boolean map
+        on_sp = g.new_vertex_property("bool")
+        for v in g.vertices():
+            d1, d2 = forward_dist[v], reverse_dist[v]
+            if d1 < inf and d2 < inf and (d1 + d2) in dist_targets:
+                on_sp[v] = True
 
-        # Phase 2: Compute reverse distances using a reversed graph view.
-        original_reversed = g_temp.is_reversed()
-        g_temp.set_reversed(True)
-        art_source = g_temp.add_vertex()  # Add an artificial source vertex.
-
-        # Create an edge property for weights (all real edges have weight 1).
-        w = g_temp.new_edge_property("int")
-        for e in g_temp.edges():
-            w[e] = 1
-        # For each target, add an edge from the artificial source with weight 0.
-        for t in targets:
-            e = g_temp.add_edge(art_source, t)
-            w[e] = 0
-
-        reverse_dist = shortest_distance(g_temp, source=art_source, weights=w)
-        # Revert to the original reversed state.
-        g_temp.set_reversed(original_reversed)
-
-        # Phase 3: Mark vertices on some shortest path.
-        target_dists = { forward_dist[t] for t in targets }
-        on_shortest_temp = g_temp.new_vertex_property("bool")
-        # Determine the number of original vertices (before adding the artificial vertex).
-        num_orig = g.num_vertices() if not inplace else g_temp.num_vertices() - 1
-        for v in g_temp.vertices():
-            # Skip the artificial vertex if operating in-place.
-            if inplace and int(v) >= num_orig:
-                continue
-            on_shortest_temp[v] = False
-            if forward_dist[v] == float("inf") or reverse_dist[v] == float("inf"):
-                continue
-            if forward_dist[v] + reverse_dist[v] in target_dists:
-                on_shortest_temp[v] = True
-
-        # Clean up modifications.
-        if inplace:
-            g_temp.remove_vertex(art_source, fast=True)
-            result_prop = on_shortest_temp
-        else:
-            # Map computed values from the temporary graph back to the original graph.
-            result_prop = g.new_vertex_property("bool")
-            for v in g.vertices():
-                result_prop[v] = on_shortest_temp[v]
-        if return_gv:
-            return GraphView(g, vfilt=result_prop)
-        else:
-            return result_prop
+        # 6) return either the raw prop or a GraphView
+        return GraphView(g, vfilt=on_sp) if return_gv else on_sp
 
     def _bfs_traversal(self, seed_vertices, vfilt, efilt, mode='downstream'):
         """
