@@ -732,3 +732,99 @@ def test_create_bipartite_prune_isolated(builder_and_core):
     # only A→B should survive, C and the self‐edge on A→A pruned
     assert gv.num_edges() == 1
     assert set(int(v) for v in gv.vertices()) == {0, 1}
+
+
+def test_filter_edges_between_categories_modes(builder_and_core):
+    """
+    Building a 3-node graph A@L1→B@L2 and B@L2→C@L1:
+      - forward('L1','L2')  should yield only A→B
+      - reverse('L1','L2')  should yield only B→C
+      - both('L1','L2')     should yield both edges
+    """
+    bldr, core = builder_and_core
+    # 1) nodes A@L1, B@L2, C@L1
+    df_n = pd.DataFrame({
+        "node_id":    ["A",  "B",  "C"],
+        "layer":      ["L1", "L2", "L1"],
+    })
+    bldr.add_vertices_from_dataframe(df_n, "node_id", "layer", drop_na=False)
+
+    # 2) two edges: A(L1)->B(L2) and B(L2)->C(L1)
+    df_e = pd.DataFrame({
+        "source_id":    ["A",    "B"],
+        "source_layer": ["L1",   "L2"],
+        "target_id":    ["B",    "C"],
+        "target_layer": ["L2",   "L1"],
+    })
+    bldr.add_edges_from_dataframe(
+        df_e,
+        "source_id", "source_layer",
+        "target_id", "target_layer",
+        property_cols=["source_layer","target_layer"],
+        drop_na=False
+    )
+
+    s = OnionNetSearcher(core)
+
+    # forward: only A->B
+    gv_fwd = s.filter_edges_between_categories("L1","L2", mode="forward")
+    edges_fwd = {(int(e.source()), int(e.target())) for e in gv_fwd.edges()}
+    assert edges_fwd == {(0,1)}
+    verts_fwd = {int(v) for v in gv_fwd.vertices()}
+    assert verts_fwd == {0,1}
+
+    # reverse: only B->C
+    gv_rev = s.filter_edges_between_categories("L1","L2", mode="reverse")
+    edges_rev = {(int(e.source()), int(e.target())) for e in gv_rev.edges()}
+    assert edges_rev == {(1,2)}
+    verts_rev = {int(v) for v in gv_rev.vertices()}
+    assert verts_rev == {1,2}
+
+    # both: both edges
+    gv_both = s.filter_edges_between_categories("L1","L2", mode="both")
+    edges_both = {(int(e.source()), int(e.target())) for e in gv_both.edges()}
+    assert edges_both == {(0,1),(1,2)}
+    verts_both = {int(v) for v in gv_both.vertices()}
+    assert verts_both == {0,1,2}
+
+
+def test_create_bipartite_gv_is_symmetric(builder_and_core):
+    """
+    create_bipartite_gv('L1','L2') and create_bipartite_gv('L2','L1')
+    should yield identical sets of nodes & edges (since it uses mode='both').
+    """
+    bldr, core = builder_and_core
+    # nodes A@L1, B@L2, C@L1
+    df_n = pd.DataFrame({
+        "node_id": ["A","B","C"],
+        "layer":   ["L1","L2","L1"]
+    })
+    bldr.add_vertices_from_dataframe(df_n, "node_id","layer", drop_na=False)
+    # edges A(L1)->B(L2) and B(L2)->C(L1)
+    df_e = pd.DataFrame({
+        "source_id":    ["A","B"],
+        "source_layer": ["L1","L2"],
+        "target_id":    ["B","C"],
+        "target_layer": ["L2","L1"]
+    })
+    bldr.add_edges_from_dataframe(
+        df_e,
+        "source_id","source_layer",
+        "target_id","target_layer",
+        property_cols=None,
+        drop_na=False
+    )
+
+    s = OnionNetSearcher(core)
+    gv12 = s.create_bipartite_gv("L1","L2")
+    gv21 = s.create_bipartite_gv("L2","L1")
+
+    # compare edge‐sets
+    e12 = {(int(e.source()), int(e.target())) for e in gv12.edges()}
+    e21 = {(int(e.source()), int(e.target())) for e in gv21.edges()}
+    assert e12 == e21 == {(0,1),(1,2)}
+
+    # compare vertex‐sets
+    v12 = {int(v) for v in gv12.vertices()}
+    v21 = {int(v) for v in gv21.vertices()}
+    assert v12 == v21 == {0,1,2}

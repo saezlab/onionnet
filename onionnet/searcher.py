@@ -6,6 +6,8 @@ from typing import List, Any, Union, Callable
 
 from .property_manager import OnionNetPropertyManager
 
+import numpy as np
+
 """
 This module defines the OnionNetSearcher class, which provides functionality for graph traversal and subgraph extraction 
 within an OnionNetGraph. It includes methods for computing shortest path related properties, performing breadth-first search 
@@ -509,6 +511,12 @@ class OnionNetSearcher:
         After filtering, any vertices that become isolated (no remaining incident edges)
         are automatically pruned.
 
+        Vectorized to:
+        - look up the integer codes for source_label and target_label
+        - build a NumPy mask of edges whose (src_layer, tgt_layer) matches
+            one of the allowed pairs for forward/reverse/both
+        - return a pruned GraphView
+
         Parameters
         ----------
         source_label : str
@@ -538,97 +546,45 @@ class OnionNetSearcher:
         """
         g = self.core.graph
 
+        # 1) map human layer names to int codes
         try:
-            src_code = self.core.layer_name_to_code[source_label]
-            tgt_code = self.core.layer_name_to_code[target_label]
+            c1 = self.core.layer_name_to_code[source_label]
+            c2 = self.core.layer_name_to_code[target_label]
         except KeyError as e:
             raise KeyError(f"Unknown layer name: {e.args[0]}")
 
-        lh = g.vp['layer_hash']
+        # 2) pull out vertex-layer array and edges *with internal edge index*
+        lh_arr   = g.vp['layer_hash'].a
+        edges_tbl = g.get_edges([g.edge_index])   # columns: [src, tgt, eidx]
+        src_idx  = edges_tbl[:, 0]
+        tgt_idx  = edges_tbl[:, 1]
+        e_idx    = edges_tbl[:, 2].astype(int)    # internal edge indices
 
+        # 3) build the boolean mask row-aligned to edges_tbl
         if mode == "forward":
-            pred = lambda e: (
-                lh[e.source()] == src_code
-                and lh[e.target()] == tgt_code
-            )
+            mask = (lh_arr[src_idx] == c1) & (lh_arr[tgt_idx] == c2)
         elif mode == "reverse":
-            pred = lambda e: (
-                lh[e.source()] == tgt_code
-                and lh[e.target()] == src_code
-            )
+            mask = (lh_arr[src_idx] == c2) & (lh_arr[tgt_idx] == c1)
         elif mode == "both":
-            pred = lambda e: (
-                (lh[e.source()] == src_code and lh[e.target()] == tgt_code)
-                or
-                (lh[e.source()] == tgt_code and lh[e.target()] == src_code)
-            )
+            mask = ((lh_arr[src_idx] == c1) & (lh_arr[tgt_idx] == c2)) | \
+                ((lh_arr[src_idx] == c2) & (lh_arr[tgt_idx] == c1))
         else:
-            raise ValueError(
-                f"mode must be 'forward', 'reverse' or 'both', not {mode!r}"
-            )
+            raise ValueError(f"mode must be 'forward','reverse' or 'both', not {mode!r}")
 
-        return self.filter_edges(pred)
+        # 4) write mask into efilt *using* the internal edge indices
+        efilt = g.new_edge_property("bool")
+        efilt.a = np.zeros(g.num_edges(), dtype=bool)
+        efilt.a[e_idx] = mask
+
+        gv = GraphView(g, efilt=efilt)
+        return self._prune_isolated(gv)
 
 
-    def create_bipartite_gv(
-        self,
-        layer1: str,
-        layer2: str,
-        prop_name: str = "layer_decoded"
-    ) -> GraphView:
-        """
-        Create a bipartite GraphView: all edges between two specified layers,
-        in either direction, then prune isolated vertices.
-
-        This picks up any edges connecting layer1 to layer2 (or vice versa)
-        and returns a view containing exactly those edges and their incident vertices.
-
-        If prop_name == 'layer_decoded' and that property does not exist,
-        it will be built on the fly by decoding the mandatory 'layer_hash'
-        via self.core.layer_code_to_name.
-
-        Parameters
-        ----------
-        layer1 : str
-            Human-readable name of the first layer; must exist in
-            self.core.layer_name_to_code, else KeyError.
-        layer2 : str
-            Human-readable name of the second layer; must exist in
-            self.core.layer_name_to_code, else KeyError.
-        prop_name : str, optional
-            Name of a vertex-property (string) that decodes layer_hash to names.
-            If 'layer_decoded' and not already present, it's generated on the fly.
-            Any other missing prop_name will cause KeyError.
-
-        Returns
-        -------
-        GraphView
-            A filtered, pruned view containing only cross-layer edges and
-            their vertices.
-
-        Raises
-        ------
-        KeyError
-            If prop_name is not 'layer_decoded' and not found in g.vp,
-            or if layer1 or layer2 are unknown.
-        """
-        g = self.core.graph
-
-        # ensure string decoding exists if requested
-        if prop_name not in g.vp:
-            if prop_name == "layer_decoded":
-                vp = g.new_vertex_property("string")
-                lh_map = g.vp['layer_hash']
-                for v in g.vertices():
-                    code = int(lh_map[v])
-                    vp[v] = self.core.layer_code_to_name.get(code, f"Unknown({code})")
-                g.vp[prop_name] = vp
-            else:
-                raise KeyError(f"Vertex property '{prop_name}' does not exist.")
-
-        # just delegate to the 'both' mode of our new filter
-        return self.filter_edges_between_categories(
-            source_label=layer1,
-            target_label=layer2,
-            mode="both"
-        )
+    def create_bipartite_gv(self, layer1: str, layer2: str, prop_name: str = "layer_decoded") -> GraphView:
+        # Back-compat note: prop_name is ignored; layer_decoded is not required anymore.
+        # You can optionally warn here if you like.
+        # warnings.warn("create_bipartite_gv is a thin wrapper. Use filter_edges_between_categories(..., mode='both').",
+        #               DeprecationWarning)
+        if prop_name != "layer_decoded":
+            raise KeyError("prop_name is ignored now; only 'layer_decoded' was ever supported.")
+        return self.filter_edges_between_categories(layer1, layer2, mode="both")
