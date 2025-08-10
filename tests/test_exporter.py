@@ -237,3 +237,139 @@ def test_export_edges_e_id_none(builder_and_core):
 
     lst = export_info(core.graph, mode="e", return_type="list")
     assert all(isinstance(d["e_id"], int) for d in lst)
+
+
+def _build_ab_edge():
+    core = OnionNetGraph()
+    b = OnionNetBuilder(core)
+    b.add_vertices_from_dataframe(
+        pd.DataFrame({"node_id":["A","B"], "layer":["0","0"]}),
+        "node_id","layer", drop_na=False
+    )
+    b.add_edges_from_dataframe(
+        pd.DataFrame({
+            "source_id":["A"], "source_layer":["0"],
+            "target_id":["B"], "target_layer":["0"]
+        }),
+        "source_id","source_layer","target_id","target_layer",
+        property_cols=None, drop_na=False
+    )
+    return core
+
+
+def test_export_edges_property_name_collision_excluded():
+    """
+    If an edge property collides with built-in columns ('source','target','e_id'),
+    the exporter must NOT overwrite them. We simulate a collision by manually
+    creating an edge prop named 'source'. The DataFrame's 'source' column must
+    remain the integer vertex index from the graph, and there must be no second
+    conflicting column exported.
+
+    Old exporter would overwrite 'source' with the property value (FAIL).
+    """
+    core = _build_ab_edge()
+    g = core.graph
+    # Manually attach a colliding edge property called 'source'
+    ep_src = g.new_edge_property("string")
+    for e in g.edges():
+        ep_src[e] = "BROKEN_IF_YOU_SEE_ME"
+    g.ep["source"] = ep_src
+
+    df = export_info(g, mode="e", return_type="pandas")
+
+    # Must have exactly these columns (prop 'source' is excluded to avoid collision)
+    assert set(df.columns) == {"e_id", "source", "target"}
+    # And 'source' must remain an int vertex index (0 for A)
+    assert df.loc[df.index[0], "source"] == 0
+    assert isinstance(df.loc[df.index[0], "source"], (int,))  # not a string
+
+
+def test_export_edges_vector_prop_fallback():
+    """
+    When any requested edge property is non-scalar (e.g., vector<double>),
+    exporter should fall back to the item-by-item path and still export values.
+    """
+    core = _build_ab_edge()
+    g = core.graph
+
+    rgba = g.new_edge_property("vector<double>")
+    w    = g.new_edge_property("int")
+    for e in g.edges():
+        rgba[e] = [0.1, 0.2, 0.3, 1.0]
+        w[e]    = 7
+    g.ep["rgba"] = rgba
+    g.ep["w"]    = w
+
+    df = export_info(g, mode="e", prop_names=["w", "rgba"], return_type="pandas")
+    assert list(df.columns) == ["e_id", "source", "target", "w", "rgba"]
+    assert df["w"].iloc[0] == 7
+    # vector<double> comes back as a list-like; check length and contents
+    vec = df["rgba"].iloc[0]
+    assert isinstance(vec, (list, tuple, np.ndarray))
+    assert len(vec) == 4 and abs(vec[0] - 0.1) < 1e-9
+
+
+def test_export_edges_on_graphview_subset_ids_preserved():
+    """
+    Exporting from a filtered GraphView should yield only those edges,
+    and e_id values should be a subset of the full graph's e_ids.
+    """
+    core = OnionNetGraph()
+    b = OnionNetBuilder(core)
+    b.add_vertices_from_dataframe(
+        pd.DataFrame({"node_id":["A","B","C"], "layer":["0","0","0"]}),
+        "node_id","layer", drop_na=False
+    )
+    # A->B, A->C, B->C
+    b.add_edges_from_dataframe(
+        pd.DataFrame({
+            "source_id":["A","A","B"],
+            "source_layer":["0","0","0"],
+            "target_id":["B","C","C"],
+            "target_layer":["0","0","0"],
+        }),
+        "source_id","source_layer","target_id","target_layer",
+        property_cols=None, drop_na=False
+    )
+    g = core.graph
+
+    # View: keep only edges whose target is C (vertex index 2)
+    gv = GraphView(g, efilt=lambda e: int(e.target()) == 2)
+
+    full_df = export_info(g,  mode="e", return_type="pandas")
+    view_df = export_info(gv, mode="e", return_type="pandas")
+
+    # Edges in the view are a strict subset by e_id
+    assert set(view_df["e_id"]).issubset(set(full_df["e_id"]))
+    # And they all point to target=2
+    assert set(view_df["target"]) == {2}
+
+
+def test_export_edges_unknown_prop_raises_valueerror():
+    """
+    Asking for a non-existent edge property should raise ValueError with a clear message.
+    Old exporter would leak a KeyError (different type).
+    """
+    core = _build_ab_edge()
+    with pytest.raises(ValueError):
+        export_info(core.graph, mode="e", prop_names=["definitely_not_here"], return_type="pandas")
+
+
+def test_export_edges_collision_names_in_prop_names_are_ignored():
+    """
+    If the caller explicitly asks for prop_names containing built-in names
+    (e.g., 'source','target','e_id'), exporter should ignore them and still
+    produce a clean table.
+    """
+    core = _build_ab_edge()
+    # also add a real scalar edge prop to verify it still appears
+    w = core.graph.new_edge_property("int")
+    for e in core.graph.edges():
+        w[e] = 5
+    core.graph.ep["w"] = w
+
+    df = export_info(core.graph, mode="e",
+                     prop_names=["e_id", "source", "target", "w"],
+                     return_type="pandas")
+    assert list(df.columns) == ["e_id", "source", "target", "w"]
+    assert df["w"].iloc[0] == 5
