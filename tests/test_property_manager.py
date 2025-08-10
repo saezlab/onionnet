@@ -1272,3 +1272,102 @@ def test_get_category_code_unknown_label_raises(pm_and_graph_simple):
     core, pm = pm_and_graph_simple
     with pytest.raises(KeyError):
         pm.get_category_code('grp', 'not_a_label', dim='v')
+
+
+def test_decode_edge_property_alignment_respects_edge_index():
+    """
+    Old bug: decoding wrote labels by zipping `for e in g.edges()` with prop.a,
+    assuming iteration order == edge-index order. That’s not guaranteed.
+    This test constructs edges in an order that *differs* from iteration order,
+    so a buggy implementation will swap labels.
+    """
+    core = OnionNetGraph()
+    bldr = OnionNetBuilder(core)
+
+    # Vertices A (0), B (1), C (2)
+    bldr.add_vertices_from_dataframe(
+        pd.DataFrame({"node_id":["A","B","C"], "layer":["0","0","0"]}),
+        "node_id","layer", drop_na=False
+    )
+
+    # Add edges in this INSERTION order: B->C ('bar'), then A->B ('foo')
+    df_e = pd.DataFrame({
+        "source_id":    ["B",   "A"],
+        "source_layer": ["0",   "0"],
+        "target_id":    ["C",   "B"],
+        "target_layer": ["0",   "0"],
+        "lbl":          ["bar", "foo"],
+    })
+    bldr.add_edges_from_dataframe(
+        df_e, "source_id","source_layer","target_id","target_layer",
+        property_cols=["lbl"], drop_na=False
+    )
+
+    pm = OnionNetPropertyManager(core)
+    pm.decode_property_labels('e', 'lbl', new_prop_name='lbl_decoded')
+
+    g = core.graph
+    lbl_codes = g.ep['lbl'].a
+    int_to_str = core.edge_categorical_mappings['lbl']['int_to_str']
+
+    # Collect expected label per *edge* via true edge index (source of truth)
+    for e in g.edges():
+        eidx = int(g.edge_index[e])             # internal edge index
+        expected = int_to_str[int(lbl_codes[eidx])]
+        got = g.ep['lbl_decoded'][e]
+        assert got == expected, f"edge {int(e.source())}->{int(e.target())}: {got} != {expected}"
+
+    # Make sure iteration order actually differs from insertion order (so this test really guards the bug)
+    order_seen = [int(g.edge_index[e]) for e in g.edges()]
+    assert order_seen != sorted(order_seen), \
+        "Iteration order unexpectedly matches edge-index order; the regression might slip by on this platform."
+    
+
+def test_decode_edge_source_target_layers_map_correctly():
+    """
+    Ensure source_layer_decoded and target_layer_decoded come from the correct
+    integer-coded columns for each edge (no accidental swapping or misalignment).
+    """
+    core = OnionNetGraph()
+    bldr = OnionNetBuilder(core)
+
+    # Layers and vertices
+    bldr.add_vertices_from_dataframe(
+        pd.DataFrame({"node_id":["A","B","C"], "layer":["L1","L2","L1"]}),
+        "node_id","layer", drop_na=False
+    )
+
+    # Two cross-layer edges so src/tgt layers differ per edge
+    edges = pd.DataFrame({
+        "source_id":    ["A", "B"],
+        "source_layer": ["L1","L2"],
+        "target_id":    ["B", "C"],
+        "target_layer": ["L2","L1"],
+    })
+    # Keep layer columns as edge properties so we can decode them
+    bldr.add_edges_from_dataframe(
+        edges, "source_id","source_layer","target_id","target_layer",
+        property_cols=["source_layer","target_layer"], drop_na=False
+    )
+
+    pm = OnionNetPropertyManager(core)
+    pm.decode_property_labels('e', 'source_layer', new_prop_name='source_layer_decoded')
+    pm.decode_property_labels('e', 'target_layer', new_prop_name='target_layer_decoded')
+
+    g = core.graph
+    # Build expected strings directly from the integer edge props using the global layer map
+    layer_map = core.layer_code_to_name
+    src_codes = g.ep['source_layer'].a
+    tgt_codes = g.ep['target_layer'].a
+
+    for e in g.edges():
+        eidx = int(g.edge_index[e])
+        expected_src = layer_map[int(src_codes[eidx])]
+        expected_tgt = layer_map[int(tgt_codes[eidx])]
+        got_src = g.ep['source_layer_decoded'][e]
+        got_tgt = g.ep['target_layer_decoded'][e]
+        assert got_src == expected_src
+        assert got_tgt == expected_tgt
+        # if the codes differ for this edge, strings must differ too
+        if src_codes[eidx] != tgt_codes[eidx]:
+            assert got_src != got_tgt

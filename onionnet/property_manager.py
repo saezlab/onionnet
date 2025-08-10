@@ -256,13 +256,18 @@ class OnionNetPropertyManager:
         human_readable_prop = self.core.graph.new_property(encoded_prop_type, 'string')
         
         # Assign the labels individually (since .a assignment doesn't work for string properties)
-        if encoded_prop_type == 'v':
-            items = list(self.core.graph.vertices())
-        else:
-            items = list(self.core.graph.edges())
-            
-        for item, label in zip(items, labels):
-            human_readable_prop[item] = label
+        g = self.core.graph
+        if encoded_prop_type == 'e':
+            # IMPORTANT: align by graph-tool's internal edge index
+            eid_map = g.edge_index
+            for e in g.edges():
+                eid = int(eid_map[e])        # true index into prop.a / labels
+                human_readable_prop[e] = labels[eid]
+        else:  # 'v'
+            # Vertex iteration order matches vertex index, so this is safe
+            for v in g.vertices():
+                vid = int(v)
+                human_readable_prop[v] = labels[vid]
         
         # Attach the new property to the graph
         if encoded_prop_type == 'v':
