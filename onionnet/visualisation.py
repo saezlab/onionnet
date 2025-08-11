@@ -708,87 +708,164 @@ def bipartite_ordered_layout(
 
 def load_or_compute_layout(g, filename, override=False, inject=None):
     """
-    Load or compute a 2D layout for g, keyed by either
-    ('layer_decoded','node_id_decoded') if available, else
-    ('layer_hash','node_id_hash').  Round-trips whatever keys you have.
-    """
-    # --- 1) Validate/choose key props ---
-    # Preferred human-readable keys:
-    use_decoded = ("layer_decoded" in g.vp) and ("node_id_decoded" in g.vp)
-    # Fallback keys must always exist:
-    if not use_decoded:
-        if "layer_hash" not in g.vp or "node_id_hash" not in g.vp:
-            raise ValueError("Graph must have either decoded props or both 'layer_hash' & 'node_id_hash'.")
-    key_cols = (("layer_decoded","node_id_decoded") if use_decoded
-                else ("layer_hash","node_id_hash"))
+    Load or compute a 2D layout for `g`, keyed by either:
+      1) ('layer_decoded','node_id_decoded')   [preferred human-readable]
+      2) ('layer_hash','node_id_hash')         [encoded integer hashes]
+      3) 'v_int'                               [fallback to vertex index IF neither pair exists]
 
-    # helper to write out a DataFrame
+    Robust key handling:
+      - Decoded keys are coerced to str on both TSV and graph sides.
+      - Hash keys are coerced to int on both sides (tolerant of "123.0").
+      - v_int keys use int(vertex_index) and are used only when neither key-pair exists.
+    """
+    # --- 1) choose key scheme present on the graph ---
+    has_layer_decoded = "layer_decoded" in g.vp
+    has_node_decoded  = "node_id_decoded" in g.vp
+    has_layer_hash    = "layer_hash" in g.vp
+    has_node_hash     = "node_id_hash" in g.vp
+
+    # partial-pair guards (bad config should raise, not fall back)
+    if has_layer_decoded ^ has_node_decoded:
+        raise ValueError("Graph has only one decoded key; need both 'layer_decoded' and 'node_id_decoded'.")
+    if has_layer_hash ^ has_node_hash:
+        raise ValueError("Graph has only one hash key; need both 'layer_hash' and 'node_id_hash'.")
+
+    has_decoded = has_layer_decoded and has_node_decoded
+    has_hash    = has_layer_hash and has_node_hash
+
+    # no vertices + no keys → error (matches the test expectation)
+    if g.num_vertices() == 0 and not (has_decoded or has_hash):
+        raise ValueError("Graph has no vertices and no key properties; cannot compute layout.")
+
+    # pick key mode: v_int is allowed only when *neither* pair exists
+    key_mode = "decoded" if has_decoded else ("hash" if has_hash else "v_int")
+    key_cols = {
+        "decoded": ("layer_decoded", "node_id_decoded"),
+        "hash":    ("layer_hash",    "node_id_hash"),
+        "v_int":   ("v_int",),  # single-column scheme
+    }[key_mode]
+
+    # helper to write out a DataFrame with normalized key types
     def _write_df(pos):
         rows = []
         for v in g.vertices():
-            row = {"x": pos[v][0], "y": pos[v][1]}
-            # add whichever keys we chose
-            for col in key_cols:
-                # cast to Python type for CSV
-                val = g.vp[col][v]
-                row[col] = int(val) if isinstance(val, (int,)) else val
+            row = {"x": float(pos[v][0]), "y": float(pos[v][1])}
+            if key_mode == "decoded":
+                row[key_cols[0]] = str(g.vp[key_cols[0]][v])
+                row[key_cols[1]] = str(g.vp[key_cols[1]][v])
+            elif key_mode == "hash":
+                row[key_cols[0]] = int(g.vp[key_cols[0]][v])
+                row[key_cols[1]] = int(g.vp[key_cols[1]][v])
+            else:  # v_int
+                row["v_int"] = int(v)
             rows.append(row)
-        df = pd.DataFrame(rows)
-        df.to_csv(filename, sep="\t", index=False)
+        pd.DataFrame(rows).to_csv(filename, sep="\t", index=False)
 
-    # --- 2) injection branch ---
+    # --- 2) injection branch (bypass load/compute) ---
     if inject is not None:
         pos = inject(g) if callable(inject) else inject
         _write_df(pos)
-        print(f"[inject] Saved layout for {len(list(g.vertices()))} vertices → {filename}")
+        print(f"[inject] Saved layout for {g.num_vertices()} vertices → {filename}")
         return pos
 
-    # --- 3) load-from-disk if possible ---
+    # --- 3) try load-from-disk (unless override) ---
     if os.path.exists(filename) and not override:
         df = pd.read_csv(filename, sep="\t")
-        # determine which key set the file has
-        if all(c in df.columns for c in ("layer_decoded","node_id_decoded")):
-            file_keys = ("layer_decoded","node_id_decoded")
-        elif all(c in df.columns for c in ("layer_hash","node_id_hash")):
-            file_keys = ("layer_hash","node_id_hash")
-        else:
-            raise ValueError("TSV missing both decoded and hash key columns.")
 
-        # build lookup from file
-        lookup = {
-            (row[file_keys[0]], row[file_keys[1]]): row
-            for _, row in df.iterrows()
-        }
-        # warn about mismatches
-        graph_keys = set()
-        for v in g.vertices():
-            key = tuple(g.vp[c][v] for c in file_keys)
-            graph_keys.add(key)
-        file_keyset = set(lookup.keys())
+        # Detect the file's key scheme
+        if all(c in df.columns for c in ("layer_decoded", "node_id_decoded")):
+            file_mode  = "decoded"
+            file_keys  = ("layer_decoded", "node_id_decoded")
+        elif all(c in df.columns for c in ("layer_hash", "node_id_hash")):
+            file_mode  = "hash"
+            file_keys  = ("layer_hash", "node_id_hash")
+        elif "v_int" in df.columns:
+            file_mode  = "v_int"
+            file_keys  = ("v_int",)
+        else:
+            raise ValueError("TSV missing any recognized key columns: "
+                             "decoded (layer_decoded,node_id_decoded), "
+                             "hash (layer_hash,node_id_hash), or v_int.")
+
+        # Normalizers so types match on both sides
+        def norm_file(val, mode):
+            if mode == "decoded":
+                return str(val)
+            if mode == "hash":
+                # allow "123", 123, "123.0"
+                try:
+                    return int(val)
+                except Exception:
+                    return int(float(val))
+            # v_int
+            try:
+                return int(val)
+            except Exception:
+                return int(float(val))
+
+        def norm_graph_vertex(v, mode):
+            if mode == "decoded":
+                return (str(g.vp["layer_decoded"][v]),
+                        str(g.vp["node_id_decoded"][v]))
+            if mode == "hash":
+                return (int(g.vp["layer_hash"][v]),
+                        int(g.vp["node_id_hash"][v]))
+            # v_int
+            return int(v)
+
+        # Build lookup from TSV
+        if file_mode in ("decoded", "hash"):
+            lookup = {
+                (norm_file(row[file_keys[0]], file_mode),
+                 norm_file(row[file_keys[1]], file_mode)): row
+                for _, row in df.iterrows()
+            }
+            # Compare key sets
+            graph_keys = {
+                norm_graph_vertex(v, file_mode) for v in g.vertices()
+            }
+            file_keyset = set(lookup.keys())
+        else:
+            # v_int
+            lookup = { norm_file(row["v_int"], "v_int"): row
+                       for _, row in df.iterrows() }
+            graph_keys = { int(v) for v in g.vertices() }
+            file_keyset = set(lookup.keys())
+
         extra_in_file  = file_keyset - graph_keys
         extra_in_graph = graph_keys - file_keyset
         if extra_in_file:
-            warnings.warn(f"{len(extra_in_file)} keys in TSV not in graph: {extra_in_file}")
+            warnings.warn(f"{len(extra_in_file)} keys in TSV not in graph (showing up to 5): "
+                          f"{list(extra_in_file)[:5]}")
         if extra_in_graph:
-            warnings.warn(f"{len(extra_in_graph)} graph vertices missing in TSV: {extra_in_graph}")
+            warnings.warn(f"{len(extra_in_graph)} graph vertices missing in TSV (showing up to 5): "
+                          f"{list(extra_in_graph)[:5]}")
 
-        # build pos
+        # Build the position map
         pos = g.new_vertex_property("vector<double>")
-        for v in g.vertices():
-            key = tuple(g.vp[c][v] for c in file_keys)
-            if key not in lookup:
-                raise ValueError(f"No layout in TSV for vertex {key}")
-            row = lookup[key]
-            pos[v] = (float(row.x), float(row.y))
+        if file_mode in ("decoded", "hash"):
+            for v in g.vertices():
+                key = norm_graph_vertex(v, file_mode)
+                if key not in lookup:
+                    raise ValueError(f"No layout in TSV for vertex key {key} (keys are {file_keys})")
+                row = lookup[key]
+                pos[v] = (float(row["x"]), float(row["y"]))
+        else:  # v_int
+            for v in g.vertices():
+                key = int(v)
+                if key not in lookup:
+                    raise ValueError(f"No layout in TSV for vertex index {key}")
+                row = lookup[key]
+                pos[v] = (float(row["x"]), float(row["y"]))
 
         print(f"[load]   Loaded layout for {len(df)} rows from {filename}")
         return pos
 
-    # --- 4) compute new layout ---
+    # --- 4) compute a fresh layout ---
     pos = sfdp_layout(g)
     _write_df(pos)
     verb = "Overrode" if override else "Computed"
-    print(f"[{verb}] Saved layout for {len(list(g.vertices()))} vertices → {filename}")
+    print(f"[{verb}] Saved layout for {g.num_vertices()} vertices → {filename}")
     return pos
 
 
