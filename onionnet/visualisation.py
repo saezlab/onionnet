@@ -384,121 +384,223 @@ def set_node_sizes_and_text_by_depth(g, root, max_size=20, min_size=5, max_text_
     return v_size, v_text_size
 
 
-def get_legend(source, prop=None, ordered_cats=None, verbose=False, mode=None, custom_cmap=None, title: str=None, save_filename: str=None):
+def get_legend(
+    source,
+    prop=None,
+    ordered_cats=None,
+    verbose=False,
+    mode=None,
+    custom_cmap=None,
+    title: str = None,
+    save_filename: str = None
+):
     """
-    Generates a legend for a graph coloring.
-    
-    Parameters:
-    -----------
-    source: Either a graph (with vertex or edge properties) or a legend dictionary mapping categories to colors.
-    prop: If source is a graph, the property name to extract values from (vertex or edge property).
-    ordered_cats: Optional list specifying the order of categories in the legend (for categorical legends).
-    verbose: If True, prints debug information.
-    mode: Optional, 'categorical' or 'continuous'. If None, the function will infer the mode from the property type.
-    custom_cmap: A custom matplotlib colormap to use for continuous legends. Defaults to viridis if not provided.
-    
-    Behavior:
-    -----------    
-    - If source is a dictionary:
-      * If it contains keys 'min_col' and 'max_col', it is treated as a continuous legend dictionary and a colorbar is displayed.\n
-      * Otherwise, it is treated as a categorical mapping from categories to colors.
-    - If source is a graph object, the function extracts the property values from source.vp[prop] or source.ep[prop].\n
-      If the property values are numeric (or mode is set to 'continuous'), a continuous colorbar is displayed.\n
-      Otherwise, a categorical legend is constructed using a default colormap (tab10).
+    Generates a legend for graph coloring or shaping.
+
+    Parameters
+    ----------
+    source : dict or graph
+        - If dict:
+            * Continuous color dict: must contain 'min_col' and 'max_col' (and min_val/max_val).
+            * Categorical color dict: {category -> color (rgba/hex/tuple)}.
+            * Categorical shape dict: {category -> shape_name}, e.g. 'circle','triangle','square','pentagon', etc.
+        - If graph: a graph-tool Graph or GraphView that has vp/ep[prop].
+
+    prop : str or None
+        Property name if `source` is a graph. Ignored for dict source.
+
+    ordered_cats : list or None
+        Custom order of categories in the legend.
+
+    verbose : bool
+        Print debug info.
+
+    mode : {'categorical', 'continuous', None}
+        When `source` is a graph, infer if None. Ignored for dict source.
+
+    custom_cmap : matplotlib colormap or None
+        Colormap for continuous legends.
+
+    title : str or None
+        Legend title.
+
+    save_filename : str or None
+        If provided, saves an SVG to f"{save_filename}.svg".
     """
+    import matplotlib.pyplot as plt
     import matplotlib.cm as cm
     from matplotlib.patches import Patch
-    
+    from matplotlib.lines import Line2D
+
+    # --- shape helpers ----------------------------------------------------
+    SHAPE_ALIASES = {
+        "circle": "o", "o": "o",
+        "square": "s", "s": "s",
+        "triangle": "^", "triangle_up": "^", "^": "^",
+        "triangle_down": "v", "v": "v",
+        "diamond": "D", "thin_diamond": "d", "d": "d", "D": "D",
+        "pentagon": "p", "p": "p",
+        "hexagon": "h", "hexagon1": "h", "hex": "h", "h": "h",
+        "star": "*", "*": "*",
+        "plus": "+", "+": "+",
+        "x": "x"
+    }
+
+    def _looks_like_shape_dict(d):
+        # Treat as shape legend if values are strings mapping to a known marker.
+        if not isinstance(d, dict) or not d:
+            return False
+        vals = list(d.values())
+        return all(isinstance(v, str) and v.lower() in SHAPE_ALIASES for v in vals)
+
+    # ---------------------------------------------------------------------
     # Case 1: source is a dictionary
+    # ---------------------------------------------------------------------
     if isinstance(source, dict):
-        if 'min_col' in source and 'max_col' in source:
-            # Continuous legend dictionary provided\n
-            min_val = source.get('min_val')
-            max_val = source.get('max_val')
+        # Continuous colorbar path
+        if "min_col" in source and "max_col" in source:
+            min_val = source.get("min_val")
+            max_val = source.get("max_val")
             if min_val is None or max_val is None:
                 raise ValueError("Continuous legend dictionary must contain 'min_val' and 'max_val'.")
             cmap = custom_cmap if custom_cmap is not None else cm.viridis
             norm = plt.Normalize(vmin=min_val, vmax=max_val)
             sm = cm.ScalarMappable(norm=norm, cmap=cmap)
             sm.set_array([])
-            # Create a Figure + Axes so colorbar() knows where to draw
             fig, ax = plt.subplots(figsize=(6, 1))
-            # Attach the colorbar to that Axes
-            cbar = fig.colorbar(sm, ax=ax, orientation='horizontal')
-            # (Optionally hide the empty image Axes if you just want the bar)
+            cbar = fig.colorbar(sm, ax=ax, orientation="horizontal")
             ax.remove()
             cbar.set_label(prop.capitalize() if prop else "Value")
             plt.show()
             return
-        else:
-            # Categorical legend dictionary provided\n
-            legend_dict = source
-            mode = 'categorical'
-    else:
-        # Case 2: source is assumed to be a graph object\n
-        if prop is None:
-            raise ValueError("When source is a graph, 'prop' must be provided.")
-        # Determine mode if not explicitly provided\n
-        if mode is None:
-            if hasattr(source, "vp") and prop in source.vp:
-                sample = next(iter(source.vp[prop]))
-            elif hasattr(source, "ep") and prop in source.ep:
-                sample = next(iter(source.ep[prop]))
-            else:
-                raise ValueError("Provided graph does not have the specified property.")
-            mode = 'continuous' if isinstance(sample, (int, float)) else 'categorical'
-        if mode == 'continuous':
-            # Extract numeric values from the property\n
-            if hasattr(source, "vp") and prop in source.vp:
-                values = [float(x) for x in source.vp[prop]]
-            elif hasattr(source, "ep") and prop in source.ep:
-                values = [float(x) for x in source.ep[prop]]
-            else:
-                raise ValueError("Provided graph does not have the specified property.")
-            min_val, max_val = min(values), max(values)
-            cmap = custom_cmap if custom_cmap is not None else cm.viridis
-            norm = plt.Normalize(vmin=min_val, vmax=max_val)
-            sm = cm.ScalarMappable(norm=norm, cmap=cmap)
-            sm.set_array([])
-            # Create a Figure + Axes so colorbar() knows where to draw
-            fig, ax = plt.subplots(figsize=(6, 1))
-            # Attach the colorbar to that Axes
-            cbar = fig.colorbar(sm, ax=ax, orientation='horizontal')
-            # (Optionally hide the empty image Axes if you just want the bar)
-            ax.remove()
-            cbar.set_label(prop.capitalize() if prop else "Value")
+
+        # Categorical shape dict
+        if _looks_like_shape_dict(source):
+            legend_dict = source  # {category: shape_name}
+            cats = ordered_cats if ordered_cats is not None else list(legend_dict.keys())
+            # Build marker proxies
+            handles = []
+            for cat in cats:
+                if cat not in legend_dict:
+                    continue
+                marker = SHAPE_ALIASES[legend_dict[cat].lower()]
+                # neutral styling; focus on shape differences
+                h = Line2D(
+                    [], [], marker=marker, linestyle="None",
+                    markersize=10, markerfacecolor="white", markeredgecolor="black",
+                    label=str(cat)
+                )
+                handles.append(h)
+            plt.figure(figsize=(5, 3))
+            plot_title = title if title is not None else (prop.capitalize() if prop else "Legend")
+            leg = plt.legend(handles=handles, title=plot_title, loc="center", frameon=False)
+            plt.axis("off")
+            if save_filename is not None:
+                plt.savefig(f"{save_filename}.svg", format="svg")
             plt.show()
             return
-        elif mode == 'categorical':
-            if hasattr(source, "vp") and prop in source.vp:
-                categories = set(source.vp[prop])
-            elif hasattr(source, "ep") and prop in source.ep:
-                categories = set(source.ep[prop])
+
+        # Otherwise treat as a categorical color dict
+        legend_dict = source
+        if verbose:
+            print("Categorical color legend dict:", legend_dict)
+
+        # Build color patch legend
+        cats = ordered_cats if ordered_cats is not None else list(legend_dict.keys())
+        legend_elements = []
+        for cat in cats:
+            if cat not in legend_dict:
+                continue
+            col = legend_dict[cat]
+            # If tuple/list with alpha, drop alpha for the patch facecolor
+            if isinstance(col, (tuple, list)) and len(col) >= 3:
+                face = col[:3]
             else:
-                raise ValueError("Provided graph does not have the specified property.")
-            # Use default colormap (tab10) for distinct color assignment\n
-            legend_dict = {cat: cm.tab10(i % 10) for i, cat in enumerate(categories)}
-            if verbose:
-                print("Default legend dictionary:", legend_dict)
+                face = col
+            legend_elements.append(Patch(facecolor=face, edgecolor="none", label=str(cat)))
+
+        plt.figure(figsize=(5, 3))
+        plot_title = title if title is not None else (prop.capitalize() if prop else "Legend")
+        plt.legend(handles=legend_elements, title=plot_title, loc="center", frameon=False)
+        plt.axis("off")
+        if save_filename is not None:
+            plt.savefig(f"{save_filename}.svg", format="svg")
+        plt.show()
+        return
+
+    # ---------------------------------------------------------------------
+    # Case 2: source is assumed to be a graph object
+    # ---------------------------------------------------------------------
+    if prop is None:
+        raise ValueError("When source is a graph, 'prop' must be provided.")
+
+    # Determine mode if not explicitly provided (continuous vs categorical)
+    if mode is None:
+        # Probe a single sample from vp/ep[prop]
+        if hasattr(source, "vp") and prop in source.vp:
+            it = iter(source.vp[prop])
+            sample = next(it, None)
+        elif hasattr(source, "ep") and prop in source.ep:
+            it = iter(source.ep[prop])
+            sample = next(it, None)
         else:
-            raise ValueError("Mode must be either 'continuous' or 'categorical'.")
-    
-    # Categorical legend: create legend elements using patches\n
-    if ordered_cats is not None:
-        legend_elements = [Patch(facecolor=legend_dict[cat][:3] if isinstance(legend_dict[cat], (tuple, list)) else legend_dict[cat], label=cat)
-                           for cat in ordered_cats if cat in legend_dict]
+            raise ValueError("Provided graph does not have the specified property.")
+        mode = "continuous" if isinstance(sample, (int, float)) else "categorical"
+
+    if mode == "continuous":
+        # Extract numeric values
+        if hasattr(source, "vp") and prop in source.vp:
+            values = [float(x) for x in source.vp[prop]]
+        elif hasattr(source, "ep") and prop in source.ep:
+            values = [float(x) for x in source.ep[prop]]
+        else:
+            raise ValueError("Provided graph does not have the specified property.")
+        if not values:
+            raise ValueError("No values found for continuous legend.")
+        min_val, max_val = min(values), max(values)
+        cmap = custom_cmap if custom_cmap is not None else cm.viridis
+        norm = plt.Normalize(vmin=min_val, vmax=max_val)
+        sm = cm.ScalarMappable(norm=norm, cmap=cmap)
+        sm.set_array([])
+        fig, ax = plt.subplots(figsize=(6, 1))
+        cbar = fig.colorbar(sm, ax=ax, orientation="horizontal")
+        ax.remove()
+        cbar.set_label(prop.capitalize())
+        plt.show()
+        return
+
+    elif mode == "categorical":
+        # Build a categorical COLOR legend from graph data
+        if hasattr(source, "vp") and prop in source.vp:
+            categories = list({x for x in source.vp[prop]})
+        elif hasattr(source, "ep") and prop in source.ep:
+            categories = list({x for x in source.ep[prop]})
+        else:
+            raise ValueError("Provided graph does not have the specified property.")
+
+        # Use tab10 to assign distinct colors
+        cats = ordered_cats if ordered_cats is not None else categories
+        legend_dict = {cat: cm.tab10(i % 10) for i, cat in enumerate(cats)}
+        if verbose:
+            print("Default categorical color legend from graph:", legend_dict)
+
+        legend_elements = []
+        for cat in cats:
+            col = legend_dict[cat]
+            face = col[:3] if isinstance(col, (tuple, list)) and len(col) >= 3 else col
+            legend_elements.append(Patch(facecolor=face, edgecolor="none", label=str(cat)))
+
+        plt.figure(figsize=(5, 3))
+        plot_title = title if title is not None else prop.capitalize()
+        plt.legend(handles=legend_elements, title=plot_title, loc="center", frameon=False)
+        plt.axis("off")
+        if save_filename is not None:
+            plt.savefig(f"{save_filename}.svg", format="svg")
+        plt.show()
+        return
+
     else:
-        legend_elements = [Patch(facecolor=(color[:3] if isinstance(color, (tuple, list)) else color), label=category)
-                           for category, color in legend_dict.items()]
-    
-    plt.figure(figsize=(5, 3))
-    plot_title = title if title is not None else (prop.capitalize() if prop is not None else "Legend")
-    plt.legend(handles=legend_elements, title=plot_title, loc="center", frameon=False)
-    plt.axis("off")
-    # Save the figure as an SVG file
-    if save_filename != None:
-        plt.savefig(f"{save_filename}.svg", format="svg")
-    plt.show()
+        raise ValueError("Mode must be either 'continuous' or 'categorical'.")
 
     
 def color_edges(g, prop_name, method="categorical", generate_legend=False, custom_colormap=None, custom_color_dict=None, zero_centred=False):
