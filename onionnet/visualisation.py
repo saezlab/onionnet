@@ -16,6 +16,9 @@ import os
 import pandas as pd
 from graph_tool.all import sfdp_layout
 
+from itertools import zip_longest
+from graph_tool.all import Graph, GraphView
+
 import warnings
 
 """
@@ -279,6 +282,70 @@ def add_halo_to_node(
     return {"v_halo": v_halo, "v_halo_color": v_halo_color}
 
 
+def add_halos_to_nodes(
+    g,
+    nodes,
+    colors=None,
+    default_color=(1.0, 1.0, 0.0, 0.6),
+    prop_name_halo="v_halo",
+    prop_name_color="v_halo_color",
+):
+    """
+    Create per-vertex halo + halo-color property maps for one or more nodes.
+
+    Parameters
+    ----------
+    g : Graph or GraphView
+        The graph you will draw.
+    nodes : sequence of Vertex or int
+        Vertices to highlight. (If you pass ints, they are treated as vertex indices.)
+    colors : sequence of RGBA tuples, optional
+        Per-node halo colors; if fewer than nodes, `default_color` is used for the rest.
+    default_color : tuple
+        Fallback RGBA.
+    prop_name_halo : str
+        Name to assign the boolean halo map into g.vp.
+    prop_name_color : str
+        Name to assign the vector<double> color map into g.vp.
+
+    Returns
+    -------
+    dict
+        {"v_halo": halo_bool_map, "v_halo_color": halo_color_map}
+    """
+    # Use the underlying base graph so property arrays line up correctly
+    base = g
+
+    v_halo       = base.new_vertex_property("bool")
+    v_halo_color = base.new_vertex_property("vector<double>")
+
+    # default: no halos
+    v_halo.a[:] = False
+
+    # Helper to coerce ints/Vertices to a Vertex on the *base* graph
+    def _as_vertex(x):
+        try:
+            return base.vertex(int(x))
+        except Exception:
+            # assume it's already a Vertex from this graph
+            return x
+
+    # Assign per-node flags + colors
+    for node, color in zip_longest(nodes, colors or [], fillvalue=default_color):
+        v = _as_vertex(node)
+        v_halo[v] = True
+        v_halo_color[v] = color
+
+    # Attach to the base graph’s vp (and also to the view’s vp for convenience)
+    base.vp[prop_name_halo]  = v_halo
+    base.vp[prop_name_color] = v_halo_color
+    if isinstance(g, GraphView):
+        g.vp[prop_name_halo]  = v_halo
+        g.vp[prop_name_color] = v_halo_color
+
+    return {"v_halo": v_halo, "v_halo_color": v_halo_color}
+
+
 def set_node_sizes_and_text_by_depth(g, root, max_size=20, min_size=5, max_text_size=15, min_text_size=8):
     """
     Set node sizes and text sizes based on their depth in the tree.
@@ -317,121 +384,223 @@ def set_node_sizes_and_text_by_depth(g, root, max_size=20, min_size=5, max_text_
     return v_size, v_text_size
 
 
-def get_legend(source, prop=None, ordered_cats=None, verbose=False, mode=None, custom_cmap=None, title: str=None, save_filename: str=None):
+def get_legend(
+    source,
+    prop=None,
+    ordered_cats=None,
+    verbose=False,
+    mode=None,
+    custom_cmap=None,
+    title: str = None,
+    save_filename: str = None
+):
     """
-    Generates a legend for a graph coloring.
-    
-    Parameters:
-    -----------
-    source: Either a graph (with vertex or edge properties) or a legend dictionary mapping categories to colors.
-    prop: If source is a graph, the property name to extract values from (vertex or edge property).
-    ordered_cats: Optional list specifying the order of categories in the legend (for categorical legends).
-    verbose: If True, prints debug information.
-    mode: Optional, 'categorical' or 'continuous'. If None, the function will infer the mode from the property type.
-    custom_cmap: A custom matplotlib colormap to use for continuous legends. Defaults to viridis if not provided.
-    
-    Behavior:
-    -----------    
-    - If source is a dictionary:
-      * If it contains keys 'min_col' and 'max_col', it is treated as a continuous legend dictionary and a colorbar is displayed.\n
-      * Otherwise, it is treated as a categorical mapping from categories to colors.
-    - If source is a graph object, the function extracts the property values from source.vp[prop] or source.ep[prop].\n
-      If the property values are numeric (or mode is set to 'continuous'), a continuous colorbar is displayed.\n
-      Otherwise, a categorical legend is constructed using a default colormap (tab10).
+    Generates a legend for graph coloring or shaping.
+
+    Parameters
+    ----------
+    source : dict or graph
+        - If dict:
+            * Continuous color dict: must contain 'min_col' and 'max_col' (and min_val/max_val).
+            * Categorical color dict: {category -> color (rgba/hex/tuple)}.
+            * Categorical shape dict: {category -> shape_name}, e.g. 'circle','triangle','square','pentagon', etc.
+        - If graph: a graph-tool Graph or GraphView that has vp/ep[prop].
+
+    prop : str or None
+        Property name if `source` is a graph. Ignored for dict source.
+
+    ordered_cats : list or None
+        Custom order of categories in the legend.
+
+    verbose : bool
+        Print debug info.
+
+    mode : {'categorical', 'continuous', None}
+        When `source` is a graph, infer if None. Ignored for dict source.
+
+    custom_cmap : matplotlib colormap or None
+        Colormap for continuous legends.
+
+    title : str or None
+        Legend title.
+
+    save_filename : str or None
+        If provided, saves an SVG to f"{save_filename}.svg".
     """
+    import matplotlib.pyplot as plt
     import matplotlib.cm as cm
     from matplotlib.patches import Patch
-    
+    from matplotlib.lines import Line2D
+
+    # --- shape helpers ----------------------------------------------------
+    SHAPE_ALIASES = {
+        "circle": "o", "o": "o",
+        "square": "s", "s": "s",
+        "triangle": "^", "triangle_up": "^", "^": "^",
+        "triangle_down": "v", "v": "v",
+        "diamond": "D", "thin_diamond": "d", "d": "d", "D": "D",
+        "pentagon": "p", "p": "p",
+        "hexagon": "h", "hexagon1": "h", "hex": "h", "h": "h",
+        "star": "*", "*": "*",
+        "plus": "+", "+": "+",
+        "x": "x"
+    }
+
+    def _looks_like_shape_dict(d):
+        # Treat as shape legend if values are strings mapping to a known marker.
+        if not isinstance(d, dict) or not d:
+            return False
+        vals = list(d.values())
+        return all(isinstance(v, str) and v.lower() in SHAPE_ALIASES for v in vals)
+
+    # ---------------------------------------------------------------------
     # Case 1: source is a dictionary
+    # ---------------------------------------------------------------------
     if isinstance(source, dict):
-        if 'min_col' in source and 'max_col' in source:
-            # Continuous legend dictionary provided\n
-            min_val = source.get('min_val')
-            max_val = source.get('max_val')
+        # Continuous colorbar path
+        if "min_col" in source and "max_col" in source:
+            min_val = source.get("min_val")
+            max_val = source.get("max_val")
             if min_val is None or max_val is None:
                 raise ValueError("Continuous legend dictionary must contain 'min_val' and 'max_val'.")
             cmap = custom_cmap if custom_cmap is not None else cm.viridis
             norm = plt.Normalize(vmin=min_val, vmax=max_val)
             sm = cm.ScalarMappable(norm=norm, cmap=cmap)
             sm.set_array([])
-            # Create a Figure + Axes so colorbar() knows where to draw
             fig, ax = plt.subplots(figsize=(6, 1))
-            # Attach the colorbar to that Axes
-            cbar = fig.colorbar(sm, ax=ax, orientation='horizontal')
-            # (Optionally hide the empty image Axes if you just want the bar)
+            cbar = fig.colorbar(sm, ax=ax, orientation="horizontal")
             ax.remove()
             cbar.set_label(prop.capitalize() if prop else "Value")
             plt.show()
             return
-        else:
-            # Categorical legend dictionary provided\n
-            legend_dict = source
-            mode = 'categorical'
-    else:
-        # Case 2: source is assumed to be a graph object\n
-        if prop is None:
-            raise ValueError("When source is a graph, 'prop' must be provided.")
-        # Determine mode if not explicitly provided\n
-        if mode is None:
-            if hasattr(source, "vp") and prop in source.vp:
-                sample = next(iter(source.vp[prop]))
-            elif hasattr(source, "ep") and prop in source.ep:
-                sample = next(iter(source.ep[prop]))
-            else:
-                raise ValueError("Provided graph does not have the specified property.")
-            mode = 'continuous' if isinstance(sample, (int, float)) else 'categorical'
-        if mode == 'continuous':
-            # Extract numeric values from the property\n
-            if hasattr(source, "vp") and prop in source.vp:
-                values = [float(x) for x in source.vp[prop]]
-            elif hasattr(source, "ep") and prop in source.ep:
-                values = [float(x) for x in source.ep[prop]]
-            else:
-                raise ValueError("Provided graph does not have the specified property.")
-            min_val, max_val = min(values), max(values)
-            cmap = custom_cmap if custom_cmap is not None else cm.viridis
-            norm = plt.Normalize(vmin=min_val, vmax=max_val)
-            sm = cm.ScalarMappable(norm=norm, cmap=cmap)
-            sm.set_array([])
-            # Create a Figure + Axes so colorbar() knows where to draw
-            fig, ax = plt.subplots(figsize=(6, 1))
-            # Attach the colorbar to that Axes
-            cbar = fig.colorbar(sm, ax=ax, orientation='horizontal')
-            # (Optionally hide the empty image Axes if you just want the bar)
-            ax.remove()
-            cbar.set_label(prop.capitalize() if prop else "Value")
+
+        # Categorical shape dict
+        if _looks_like_shape_dict(source):
+            legend_dict = source  # {category: shape_name}
+            cats = ordered_cats if ordered_cats is not None else list(legend_dict.keys())
+            # Build marker proxies
+            handles = []
+            for cat in cats:
+                if cat not in legend_dict:
+                    continue
+                marker = SHAPE_ALIASES[legend_dict[cat].lower()]
+                # neutral styling; focus on shape differences
+                h = Line2D(
+                    [], [], marker=marker, linestyle="None",
+                    markersize=10, markerfacecolor="white", markeredgecolor="black",
+                    label=str(cat)
+                )
+                handles.append(h)
+            plt.figure(figsize=(5, 3))
+            plot_title = title if title is not None else (prop.capitalize() if prop else "Legend")
+            leg = plt.legend(handles=handles, title=plot_title, loc="center", frameon=False)
+            plt.axis("off")
+            if save_filename is not None:
+                plt.savefig(f"{save_filename}.svg", format="svg")
             plt.show()
             return
-        elif mode == 'categorical':
-            if hasattr(source, "vp") and prop in source.vp:
-                categories = set(source.vp[prop])
-            elif hasattr(source, "ep") and prop in source.ep:
-                categories = set(source.ep[prop])
+
+        # Otherwise treat as a categorical color dict
+        legend_dict = source
+        if verbose:
+            print("Categorical color legend dict:", legend_dict)
+
+        # Build color patch legend
+        cats = ordered_cats if ordered_cats is not None else list(legend_dict.keys())
+        legend_elements = []
+        for cat in cats:
+            if cat not in legend_dict:
+                continue
+            col = legend_dict[cat]
+            # If tuple/list with alpha, drop alpha for the patch facecolor
+            if isinstance(col, (tuple, list)) and len(col) >= 3:
+                face = col[:3]
             else:
-                raise ValueError("Provided graph does not have the specified property.")
-            # Use default colormap (tab10) for distinct color assignment\n
-            legend_dict = {cat: cm.tab10(i % 10) for i, cat in enumerate(categories)}
-            if verbose:
-                print("Default legend dictionary:", legend_dict)
+                face = col
+            legend_elements.append(Patch(facecolor=face, edgecolor="none", label=str(cat)))
+
+        plt.figure(figsize=(5, 3))
+        plot_title = title if title is not None else (prop.capitalize() if prop else "Legend")
+        plt.legend(handles=legend_elements, title=plot_title, loc="center", frameon=False)
+        plt.axis("off")
+        if save_filename is not None:
+            plt.savefig(f"{save_filename}.svg", format="svg")
+        plt.show()
+        return
+
+    # ---------------------------------------------------------------------
+    # Case 2: source is assumed to be a graph object
+    # ---------------------------------------------------------------------
+    if prop is None:
+        raise ValueError("When source is a graph, 'prop' must be provided.")
+
+    # Determine mode if not explicitly provided (continuous vs categorical)
+    if mode is None:
+        # Probe a single sample from vp/ep[prop]
+        if hasattr(source, "vp") and prop in source.vp:
+            it = iter(source.vp[prop])
+            sample = next(it, None)
+        elif hasattr(source, "ep") and prop in source.ep:
+            it = iter(source.ep[prop])
+            sample = next(it, None)
         else:
-            raise ValueError("Mode must be either 'continuous' or 'categorical'.")
-    
-    # Categorical legend: create legend elements using patches\n
-    if ordered_cats is not None:
-        legend_elements = [Patch(facecolor=legend_dict[cat][:3] if isinstance(legend_dict[cat], (tuple, list)) else legend_dict[cat], label=cat)
-                           for cat in ordered_cats if cat in legend_dict]
+            raise ValueError("Provided graph does not have the specified property.")
+        mode = "continuous" if isinstance(sample, (int, float)) else "categorical"
+
+    if mode == "continuous":
+        # Extract numeric values
+        if hasattr(source, "vp") and prop in source.vp:
+            values = [float(x) for x in source.vp[prop]]
+        elif hasattr(source, "ep") and prop in source.ep:
+            values = [float(x) for x in source.ep[prop]]
+        else:
+            raise ValueError("Provided graph does not have the specified property.")
+        if not values:
+            raise ValueError("No values found for continuous legend.")
+        min_val, max_val = min(values), max(values)
+        cmap = custom_cmap if custom_cmap is not None else cm.viridis
+        norm = plt.Normalize(vmin=min_val, vmax=max_val)
+        sm = cm.ScalarMappable(norm=norm, cmap=cmap)
+        sm.set_array([])
+        fig, ax = plt.subplots(figsize=(6, 1))
+        cbar = fig.colorbar(sm, ax=ax, orientation="horizontal")
+        ax.remove()
+        cbar.set_label(prop.capitalize())
+        plt.show()
+        return
+
+    elif mode == "categorical":
+        # Build a categorical COLOR legend from graph data
+        if hasattr(source, "vp") and prop in source.vp:
+            categories = list({x for x in source.vp[prop]})
+        elif hasattr(source, "ep") and prop in source.ep:
+            categories = list({x for x in source.ep[prop]})
+        else:
+            raise ValueError("Provided graph does not have the specified property.")
+
+        # Use tab10 to assign distinct colors
+        cats = ordered_cats if ordered_cats is not None else categories
+        legend_dict = {cat: cm.tab10(i % 10) for i, cat in enumerate(cats)}
+        if verbose:
+            print("Default categorical color legend from graph:", legend_dict)
+
+        legend_elements = []
+        for cat in cats:
+            col = legend_dict[cat]
+            face = col[:3] if isinstance(col, (tuple, list)) and len(col) >= 3 else col
+            legend_elements.append(Patch(facecolor=face, edgecolor="none", label=str(cat)))
+
+        plt.figure(figsize=(5, 3))
+        plot_title = title if title is not None else prop.capitalize()
+        plt.legend(handles=legend_elements, title=plot_title, loc="center", frameon=False)
+        plt.axis("off")
+        if save_filename is not None:
+            plt.savefig(f"{save_filename}.svg", format="svg")
+        plt.show()
+        return
+
     else:
-        legend_elements = [Patch(facecolor=(color[:3] if isinstance(color, (tuple, list)) else color), label=category)
-                           for category, color in legend_dict.items()]
-    
-    plt.figure(figsize=(5, 3))
-    plot_title = title if title is not None else (prop.capitalize() if prop is not None else "Legend")
-    plt.legend(handles=legend_elements, title=plot_title, loc="center", frameon=False)
-    plt.axis("off")
-    # Save the figure as an SVG file
-    if save_filename != None:
-        plt.savefig(f"{save_filename}.svg", format="svg")
-    plt.show()
+        raise ValueError("Mode must be either 'continuous' or 'categorical'.")
 
     
 def color_edges(g, prop_name, method="categorical", generate_legend=False, custom_colormap=None, custom_color_dict=None, zero_centred=False):
@@ -641,87 +810,164 @@ def bipartite_ordered_layout(
 
 def load_or_compute_layout(g, filename, override=False, inject=None):
     """
-    Load or compute a 2D layout for g, keyed by either
-    ('layer_decoded','node_id_decoded') if available, else
-    ('layer_hash','node_id_hash').  Round-trips whatever keys you have.
-    """
-    # --- 1) Validate/choose key props ---
-    # Preferred human-readable keys:
-    use_decoded = ("layer_decoded" in g.vp) and ("node_id_decoded" in g.vp)
-    # Fallback keys must always exist:
-    if not use_decoded:
-        if "layer_hash" not in g.vp or "node_id_hash" not in g.vp:
-            raise ValueError("Graph must have either decoded props or both 'layer_hash' & 'node_id_hash'.")
-    key_cols = (("layer_decoded","node_id_decoded") if use_decoded
-                else ("layer_hash","node_id_hash"))
+    Load or compute a 2D layout for `g`, keyed by either:
+      1) ('layer_decoded','node_id_decoded')   [preferred human-readable]
+      2) ('layer_hash','node_id_hash')         [encoded integer hashes]
+      3) 'v_int'                               [fallback to vertex index IF neither pair exists]
 
-    # helper to write out a DataFrame
+    Robust key handling:
+      - Decoded keys are coerced to str on both TSV and graph sides.
+      - Hash keys are coerced to int on both sides (tolerant of "123.0").
+      - v_int keys use int(vertex_index) and are used only when neither key-pair exists.
+    """
+    # --- 1) choose key scheme present on the graph ---
+    has_layer_decoded = "layer_decoded" in g.vp
+    has_node_decoded  = "node_id_decoded" in g.vp
+    has_layer_hash    = "layer_hash" in g.vp
+    has_node_hash     = "node_id_hash" in g.vp
+
+    # partial-pair guards (bad config should raise, not fall back)
+    if has_layer_decoded ^ has_node_decoded:
+        raise ValueError("Graph has only one decoded key; need both 'layer_decoded' and 'node_id_decoded'.")
+    if has_layer_hash ^ has_node_hash:
+        raise ValueError("Graph has only one hash key; need both 'layer_hash' and 'node_id_hash'.")
+
+    has_decoded = has_layer_decoded and has_node_decoded
+    has_hash    = has_layer_hash and has_node_hash
+
+    # no vertices + no keys → error (matches the test expectation)
+    if g.num_vertices() == 0 and not (has_decoded or has_hash):
+        raise ValueError("Graph has no vertices and no key properties; cannot compute layout.")
+
+    # pick key mode: v_int is allowed only when *neither* pair exists
+    key_mode = "decoded" if has_decoded else ("hash" if has_hash else "v_int")
+    key_cols = {
+        "decoded": ("layer_decoded", "node_id_decoded"),
+        "hash":    ("layer_hash",    "node_id_hash"),
+        "v_int":   ("v_int",),  # single-column scheme
+    }[key_mode]
+
+    # helper to write out a DataFrame with normalized key types
     def _write_df(pos):
         rows = []
         for v in g.vertices():
-            row = {"x": pos[v][0], "y": pos[v][1]}
-            # add whichever keys we chose
-            for col in key_cols:
-                # cast to Python type for CSV
-                val = g.vp[col][v]
-                row[col] = int(val) if isinstance(val, (int,)) else val
+            row = {"x": float(pos[v][0]), "y": float(pos[v][1])}
+            if key_mode == "decoded":
+                row[key_cols[0]] = str(g.vp[key_cols[0]][v])
+                row[key_cols[1]] = str(g.vp[key_cols[1]][v])
+            elif key_mode == "hash":
+                row[key_cols[0]] = int(g.vp[key_cols[0]][v])
+                row[key_cols[1]] = int(g.vp[key_cols[1]][v])
+            else:  # v_int
+                row["v_int"] = int(v)
             rows.append(row)
-        df = pd.DataFrame(rows)
-        df.to_csv(filename, sep="\t", index=False)
+        pd.DataFrame(rows).to_csv(filename, sep="\t", index=False)
 
-    # --- 2) injection branch ---
+    # --- 2) injection branch (bypass load/compute) ---
     if inject is not None:
         pos = inject(g) if callable(inject) else inject
         _write_df(pos)
-        print(f"[inject] Saved layout for {len(list(g.vertices()))} vertices → {filename}")
+        print(f"[inject] Saved layout for {g.num_vertices()} vertices → {filename}")
         return pos
 
-    # --- 3) load-from-disk if possible ---
+    # --- 3) try load-from-disk (unless override) ---
     if os.path.exists(filename) and not override:
         df = pd.read_csv(filename, sep="\t")
-        # determine which key set the file has
-        if all(c in df.columns for c in ("layer_decoded","node_id_decoded")):
-            file_keys = ("layer_decoded","node_id_decoded")
-        elif all(c in df.columns for c in ("layer_hash","node_id_hash")):
-            file_keys = ("layer_hash","node_id_hash")
-        else:
-            raise ValueError("TSV missing both decoded and hash key columns.")
 
-        # build lookup from file
-        lookup = {
-            (row[file_keys[0]], row[file_keys[1]]): row
-            for _, row in df.iterrows()
-        }
-        # warn about mismatches
-        graph_keys = set()
-        for v in g.vertices():
-            key = tuple(g.vp[c][v] for c in file_keys)
-            graph_keys.add(key)
-        file_keyset = set(lookup.keys())
+        # Detect the file's key scheme
+        if all(c in df.columns for c in ("layer_decoded", "node_id_decoded")):
+            file_mode  = "decoded"
+            file_keys  = ("layer_decoded", "node_id_decoded")
+        elif all(c in df.columns for c in ("layer_hash", "node_id_hash")):
+            file_mode  = "hash"
+            file_keys  = ("layer_hash", "node_id_hash")
+        elif "v_int" in df.columns:
+            file_mode  = "v_int"
+            file_keys  = ("v_int",)
+        else:
+            raise ValueError("TSV missing any recognized key columns: "
+                             "decoded (layer_decoded,node_id_decoded), "
+                             "hash (layer_hash,node_id_hash), or v_int.")
+
+        # Normalizers so types match on both sides
+        def norm_file(val, mode):
+            if mode == "decoded":
+                return str(val)
+            if mode == "hash":
+                # allow "123", 123, "123.0"
+                try:
+                    return int(val)
+                except Exception:
+                    return int(float(val))
+            # v_int
+            try:
+                return int(val)
+            except Exception:
+                return int(float(val))
+
+        def norm_graph_vertex(v, mode):
+            if mode == "decoded":
+                return (str(g.vp["layer_decoded"][v]),
+                        str(g.vp["node_id_decoded"][v]))
+            if mode == "hash":
+                return (int(g.vp["layer_hash"][v]),
+                        int(g.vp["node_id_hash"][v]))
+            # v_int
+            return int(v)
+
+        # Build lookup from TSV
+        if file_mode in ("decoded", "hash"):
+            lookup = {
+                (norm_file(row[file_keys[0]], file_mode),
+                 norm_file(row[file_keys[1]], file_mode)): row
+                for _, row in df.iterrows()
+            }
+            # Compare key sets
+            graph_keys = {
+                norm_graph_vertex(v, file_mode) for v in g.vertices()
+            }
+            file_keyset = set(lookup.keys())
+        else:
+            # v_int
+            lookup = { norm_file(row["v_int"], "v_int"): row
+                       for _, row in df.iterrows() }
+            graph_keys = { int(v) for v in g.vertices() }
+            file_keyset = set(lookup.keys())
+
         extra_in_file  = file_keyset - graph_keys
         extra_in_graph = graph_keys - file_keyset
         if extra_in_file:
-            warnings.warn(f"{len(extra_in_file)} keys in TSV not in graph: {extra_in_file}")
+            warnings.warn(f"{len(extra_in_file)} keys in TSV not in graph (showing up to 5): "
+                          f"{list(extra_in_file)[:5]}")
         if extra_in_graph:
-            warnings.warn(f"{len(extra_in_graph)} graph vertices missing in TSV: {extra_in_graph}")
+            warnings.warn(f"{len(extra_in_graph)} graph vertices missing in TSV (showing up to 5): "
+                          f"{list(extra_in_graph)[:5]}")
 
-        # build pos
+        # Build the position map
         pos = g.new_vertex_property("vector<double>")
-        for v in g.vertices():
-            key = tuple(g.vp[c][v] for c in file_keys)
-            if key not in lookup:
-                raise ValueError(f"No layout in TSV for vertex {key}")
-            row = lookup[key]
-            pos[v] = (float(row.x), float(row.y))
+        if file_mode in ("decoded", "hash"):
+            for v in g.vertices():
+                key = norm_graph_vertex(v, file_mode)
+                if key not in lookup:
+                    raise ValueError(f"No layout in TSV for vertex key {key} (keys are {file_keys})")
+                row = lookup[key]
+                pos[v] = (float(row["x"]), float(row["y"]))
+        else:  # v_int
+            for v in g.vertices():
+                key = int(v)
+                if key not in lookup:
+                    raise ValueError(f"No layout in TSV for vertex index {key}")
+                row = lookup[key]
+                pos[v] = (float(row["x"]), float(row["y"]))
 
         print(f"[load]   Loaded layout for {len(df)} rows from {filename}")
         return pos
 
-    # --- 4) compute new layout ---
+    # --- 4) compute a fresh layout ---
     pos = sfdp_layout(g)
     _write_df(pos)
     verb = "Overrode" if override else "Computed"
-    print(f"[{verb}] Saved layout for {len(list(g.vertices()))} vertices → {filename}")
+    print(f"[{verb}] Saved layout for {g.num_vertices()} vertices → {filename}")
     return pos
 
 

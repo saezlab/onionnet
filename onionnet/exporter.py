@@ -9,8 +9,8 @@ It defines functions to export graph data (vertices and edges) to various format
 a list of dictionaries, or a dictionary keyed by IDs.
 """
 
-
-def export_info(g, mode="v", prop_names: list = None, noisy: bool = False, return_type: str = "pandas"):
+    
+def export_info(g, mode="v", prop_names=None, noisy=False, return_type="pandas"):
     """
     Export information from a graph (Graph or GraphView) into a structured format.
     
@@ -30,9 +30,9 @@ def export_info(g, mode="v", prop_names: list = None, noisy: bool = False, retur
         If True, print details of the exported data during processing. Default is False.
     return_type : str, optional
         The format of the returned data:
-          - "pandas" (default) returns a pandas DataFrame
-          - "list" returns a list of dictionaries
-          - "dict" returns a dictionary keyed by vertex or edge ID
+            - "pandas" (default) returns a pandas DataFrame
+            - "list" returns a list of dictionaries
+            - "dict" returns a dictionary keyed by vertex or edge ID
     
     Returns
     -------
@@ -44,55 +44,82 @@ def export_info(g, mode="v", prop_names: list = None, noisy: bool = False, retur
     ValueError
         If the mode is not 'v' or 'e', or if an invalid return_type is specified.
     """
+    import pandas as pd
+    try:
+        import numpy as np
+    except Exception:
+        np = None
+
+    if mode not in ("v", "e"):
+        raise ValueError("mode must be 'v' (vertices) or 'e' (edges)")
+
     if mode == "v":
-        # Export vertex information using g.vp
-        prop_map = g.vp
-        get_id = lambda v: int(v)
+        prop_dict = g.vp
         items = g.vertices()
-        base_keys = ['v_int']
-    elif mode == "e":
-        # Export edge information using g.ep
-        prop_map = g.ep
-        # For edges, include source and target vertices.
-        def get_id(e):
-            # If the graph has an edge_index, use it to get the edge ID.
-            return int(g.edge_index[e]) if hasattr(g, "edge_index") else None
-        items = g.edges()
-        base_keys = ['e_id', 'source', 'target']
+        base_keys = {"v_int"}
+        mk_id = lambda v: int(v)
+        base_builder = lambda it: {"v_int": mk_id(it)}
     else:
-        raise ValueError("mode must be 'v' (for vertices) or 'e' (for edges)")
-    
+        prop_dict = g.ep
+        items = g.edges()
+        base_keys = {"e_id", "source", "target"}
+        eid_map = g.edge_index  # works for Graph and GraphView
+        mk_id = lambda e: int(eid_map[e])
+        base_builder = lambda it: {
+            "e_id": mk_id(it),
+            "source": int(it.source()),
+            "target": int(it.target()),
+        }
+
+    # Decide which props to export (never include built-ins)
     if prop_names is None:
-        # Use all property keys from the property map.
-        prop_names = list(prop_map.keys())
-    
-    info_list = []
-    for item in items:
-        if mode == "v":
-            info = {'v_int': get_id(item)}
-        else:
-            info = {
-                'e_id': get_id(item),
-                'source': int(item.source()),
-                'target': int(item.target())
-            }
-        for prop in prop_names:
-            info[prop] = prop_map[prop][item]
+        props = [p for p in prop_dict.keys() if p not in base_keys]
+    else:
+        requested = [p for p in prop_names if p not in base_keys]
+        unknown = [p for p in requested if p not in prop_dict]
+        if unknown:
+            raise ValueError(f"Unknown {'edge' if mode=='e' else 'vertex'} properties: {unknown}")
+        props = requested
+
+    rows = []
+    for it in items:
+        row = base_builder(it)
+        for p in props:
+            val = prop_dict[p][it]
+
+            # --- normalize types for stable tests/serialization ---
+            # numpy arrays / vector<double> -> list
+            if hasattr(val, "tolist"):
+                try:
+                    val = val.tolist()
+                except Exception:
+                    pass
+            # numpy scalars -> Python scalars
+            if np is not None and isinstance(val, np.generic):
+                val = val.item()
+
+            row[p] = val
+
         if noisy:
-            props_str = ", ".join(f"{prop} = {info[prop]}" for prop in prop_names)
             if mode == "v":
-                print(f"Vertex {info['v_int']}: {props_str}")
+                print(f"Vertex {row['v_int']}: " + ", ".join(f"{p} = {row[p]}" for p in props))
             else:
-                print(f"Edge {info['e_id']} ({info['source']} -> {info['target']}): {props_str}")
-        info_list.append(info)
-    
+                print(f"Edge {row['e_id']} ({row['source']} -> {row['target']}): " +
+                      ", ".join(f"{p} = {row[p]}" for p in props))
+        rows.append(row)
+
     if return_type == "list":
-        return info_list
+        return rows
     elif return_type == "dict":
-        # Keyed by the ID (vertex or edge)
-        key_name = "v_int" if mode == "v" else "e_id"
-        return {item[key_name]: item for item in info_list}
+        key = "v_int" if mode == "v" else "e_id"
+        return {r[key]: r for r in rows}
     elif return_type == "pandas":
-        return pd.DataFrame(info_list)
+        df = pd.DataFrame(rows)
+        # Force Python ints for built-in edge columns so tests see `int`, not np.int64
+        if mode == "e":
+            for col in ("e_id", "source", "target"):
+                if col in df.columns:
+                    df[col] = df[col].map(int).astype(object)
+        return df
     else:
         raise ValueError("Invalid return_type. Use 'list', 'dict', or 'pandas'.")

@@ -4,6 +4,8 @@ from typing import List, Any, Dict
 import numpy as np
 import pandas as pd
 
+from graph_tool.all import Graph, GraphView
+
 """
 This module provides the OnionNetPropertyManager class, which handles property access, conversion, and management for vertices (and edges) in an OnionNetGraph.
 It includes methods to get and set vertex properties, view properties, create human-readable labels, and decode encoded property values.
@@ -183,7 +185,8 @@ class OnionNetPropertyManager:
         encoded_prop_name: str, 
         new_prop_name: str = None,  # Defaults to f"{encoded_prop_name}_decoded"
         mapping_dict: Dict[int, str] = None,  # Defaults based on core's mappings
-        default_label: str = 'Unknown'
+        default_label: str = 'Unknown',
+        g: Graph = None,
     ) -> None:
         """
         Create a new property by mapping encoded integer values to human-readable strings.
@@ -205,78 +208,118 @@ class OnionNetPropertyManager:
             ValueError: If the encoded_prop_type is not 'v' or 'e', or if property conversion fails.
             KeyError: If the specified encoded property does not exist.
         """
-        if encoded_prop_type not in ['v', 'e']:
-            raise ValueError("encoded_prop_type must be 'v' for vertex or 'e' for edge.")
-        
+        if encoded_prop_type not in ('v', 'e'):
+            raise ValueError("encoded_prop_type must be 'v' (vertex) or 'e' (edge).")
+
         if new_prop_name is None:
             new_prop_name = f"{encoded_prop_name}_decoded"
 
-        if encoded_prop_type == 'v' and encoded_prop_name in self.core.edge_categorical_mappings:
-            raise ValueError(f"Property '{encoded_prop_name}' is an edge property, cannot decode as vertex.")
-        if encoded_prop_type == 'e' and encoded_prop_name in self.core.vertex_categorical_mappings:
-            raise ValueError(f"Property '{encoded_prop_name}' is a vertex property, cannot decode as edge.")
+        # Operate on the provided graph/view (or the core graph by default)
+        active = g if g is not None else self.core.graph
+        is_view = isinstance(active, GraphView)
 
+        # ---- dimension mismatch guard with nuance ----
+        if encoded_prop_type == 'v':
+            # If it's not on vertices but *is* known on edges → dimension mismatch (ValueError)
+            if encoded_prop_name not in active.vp and encoded_prop_name in self.core.edge_categorical_mappings:
+                raise ValueError(
+                    f"'{encoded_prop_name}' looks like an EDGE property; cannot decode it as a VERTEX property."
+                )
+        else:  # 'e'
+            if encoded_prop_name not in active.ep and encoded_prop_name in self.core.vertex_categorical_mappings:
+                raise ValueError(
+                    f"'{encoded_prop_name}' looks like a VERTEX property; cannot decode it as an EDGE property."
+                )
+
+        # Ensure the encoded property exists on the requested dimension
+        if encoded_prop_type == 'v':
+            if encoded_prop_name not in active.vp:
+                raise KeyError(f"Vertex property '{encoded_prop_name}' does not exist.")
+        else:
+            if encoded_prop_name not in active.ep:
+                raise KeyError(f"Edge property '{encoded_prop_name}' does not exist.")
+
+        # Resolve mapping dict if not provided.
+        # Special-case edge-side layer props to use the global layer map.
         if mapping_dict is None:
             if encoded_prop_type == 'v':
-                # property must exist
-                if encoded_prop_name not in self.core.graph.vp:
-                    raise KeyError(f"Vertex property '{encoded_prop_name}' does not exist.")
-                # must be categorical
                 if encoded_prop_name not in self.core.vertex_categorical_mappings:
-                    raise ValueError(f"Vertex property '{encoded_prop_name}' is not categorical and cannot be decoded.")
+                    raise ValueError(
+                        f"Vertex property '{encoded_prop_name}' is not registered as categorical; "
+                        f"provide mapping_dict to decode."
+                    )
                 mapping_dict = self.core.vertex_categorical_mappings[encoded_prop_name]['int_to_str']
-            else:  # edge
-                if encoded_prop_name not in self.core.graph.ep:
-                    raise KeyError(f"Edge property '{encoded_prop_name}' does not exist.")
-                if encoded_prop_name not in self.core.edge_categorical_mappings:
-                    raise ValueError(f"Edge property '{encoded_prop_name}' is not categorical and cannot be decoded.")
-                mapping_dict = self.core.edge_categorical_mappings[encoded_prop_name]['int_to_str']
-        
-        # Retrieve the encoded property based on dimension
-        if encoded_prop_type == 'v':
-            if encoded_prop_name not in self.core.graph.vp:
-                raise KeyError(f"Vertex property '{encoded_prop_name}' does not exist.")
-            prop = self.core.graph.vp[encoded_prop_name]
-        else:
-            if encoded_prop_name not in self.core.graph.ep:
+            else:
+                if encoded_prop_name in ('source_layer', 'target_layer'):
+                    mapping_dict = self.core.layer_code_to_name
+                else:
+                    if encoded_prop_name not in self.core.edge_categorical_mappings:
+                        raise ValueError(
+                            f"Edge property '{encoded_prop_name}' is not registered as categorical; "
+                            f"provide mapping_dict to decode."
+                        )
+                    mapping_dict = self.core.edge_categorical_mappings[encoded_prop_name]['int_to_str']
+
+        # Helper: vectorized lookup → array of labels (object dtype)
+        def vectorized_labels(int_array: np.ndarray) -> np.ndarray:
+            # simple + robust: vectorize mapping with default fallback
+            return np.vectorize(lambda x: mapping_dict.get(int(x), default_label), otypes=[object])(int_array)
+
+        if encoded_prop_type == 'e':
+            # ---- EDGE BRANCH ----
+            if encoded_prop_name not in active.ep:
                 raise KeyError(f"Edge property '{encoded_prop_name}' does not exist.")
-            prop = self.core.graph.ep[encoded_prop_name]
-        
-        # Obtain the property as a NumPy array and cast to int
-        try:
-            encoded_array = prop.a.astype(int)
-        except Exception as e:
-            raise ValueError(f"Error converting property values to int: {e}")
-        
-        # Use np.vectorize to apply the mapping; specify otypes=[str] to force string outputs.
-        vectorized_map = np.vectorize(lambda x: mapping_dict.get(x, default_label), otypes=[str])
-        labels = vectorized_map(encoded_array)
-        
-        # Create a new property map for the human-readable labels
-        human_readable_prop = self.core.graph.new_property(encoded_prop_type, 'string')
-        
-        # Assign the labels individually (since .a assignment doesn't work for string properties)
-        if encoded_prop_type == 'v':
-            items = list(self.core.graph.vertices())
+
+            decoded = active.new_edge_property('string')
+
+            if is_view:
+                # Safe on any graph-tool version; no base unwrap needed
+                enc_map = active.ep[encoded_prop_name]
+                for e in active.edges():
+                    code = int(enc_map[e])
+                    decoded[e] = mapping_dict.get(code, default_label)
+            else:
+                # Keep the fast vectorized path on full graphs
+                enc = active.ep[encoded_prop_name].a.astype(int)
+                table = np.empty(max(int(enc.max()) + 1, 1), dtype=object)
+                table[:] = default_label
+                for k, v in mapping_dict.items():
+                    if isinstance(k, (int, np.integer)) and 0 <= int(k) < table.size:
+                        table[int(k)] = v
+                labels_all = table[enc]
+                for e in active.edges():
+                    eid = int(active.edge_index[e])
+                    decoded[e] = labels_all[eid]
+
+            active.ep[new_prop_name] = decoded
+            print(f"E property '{new_prop_name}' created successfully.")
+
         else:
-            items = list(self.core.graph.edges())
-            
-        for item, label in zip(items, labels):
-            human_readable_prop[item] = label
-        
-        # Attach the new property to the graph
-        if encoded_prop_type == 'v':
-            self.core.graph.vp[new_prop_name] = human_readable_prop
-        else:
-            self.core.graph.ep[new_prop_name] = human_readable_prop
-        
-        print(f"{encoded_prop_type.upper()} property '{new_prop_name}' created successfully.")
+            # ---- VERTEX BRANCH ----
+            if encoded_prop_name not in active.vp:
+                raise KeyError(...)
+            decoded = active.new_vertex_property('string')
+
+            if is_view:
+                enc_map = active.vp[encoded_prop_name]
+                for v in active.vertices():
+                    code = int(enc_map[v])
+                    decoded[v] = mapping_dict.get(code, default_label)
+            else:
+                enc = active.vp[encoded_prop_name].a.astype(int)
+                labels_all = np.vectorize(lambda x: mapping_dict.get(x, default_label), otypes=[object])(enc)
+                for v in active.vertices():
+                    decoded[v] = labels_all[int(v)]
+
+            active.vp[new_prop_name] = decoded
+            print(f"V property '{new_prop_name}' created successfully.")
 
 
     def decode_property_labels_bulk(
         self,
         df: pd.DataFrame,
-        encoded_prop_type: str = 'v'
+        encoded_prop_type: str = 'v',
+        g: Graph = None,
     ) -> None:
         """
         Bulk decode categorical properties based on DataFrame columns.
@@ -315,7 +358,8 @@ class OnionNetPropertyManager:
                 self.decode_property_labels(
                     encoded_prop_type=encoded_prop_type,
                     encoded_prop_name=orig,
-                    new_prop_name=f"{cleaned}_decoded"
+                    new_prop_name=f"{cleaned}_decoded",
+                    g=g,
                 )
             else:
                 print(f"{orig} prop left as is, no decoding needed (not an object type)")

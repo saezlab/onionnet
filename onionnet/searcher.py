@@ -6,6 +6,8 @@ from typing import List, Any, Union, Callable
 
 from .property_manager import OnionNetPropertyManager
 
+import numpy as np
+
 """
 This module defines the OnionNetSearcher class, which provides functionality for graph traversal and subgraph extraction 
 within an OnionNetGraph. It includes methods for computing shortest path related properties, performing breadth-first search 
@@ -24,99 +26,183 @@ class OnionNetSearcher:
             core (OnionNetGraph): The core graph object that will be used for searching and traversal operations.
         """
         self.core = core
+        self.pm = OnionNetPropertyManager(core)
 
-    def compute_on_shortest(self, source_idx: int, target_indices: List[int], inplace: bool = False, g: Graph = None, return_gv: bool = False):
+    def _coerce_to_idx(self, x):
+        """Accept int/Vertex or (layer_name, node_id_str) and return int index."""
+        # int or graph-tool Vertex?
+        try:
+            return int(x)
+        except Exception:
+            pass
+        # (layer_name, node_id_str)?
+        if isinstance(x, tuple) and len(x) == 2:
+            v = self.pm.get_vertex_by_name_tuple(layer_name=x[0], node_id_str=x[1])
+            if v is None:
+                raise ValueError(f"Vertex {x!r} not found.")
+            return int(v)
+        raise TypeError("source/targets must be int/Vertex or (layer_name, node_id_str) tuple.")
+
+    def compute_on_shortest(
+        self,
+        source,
+        targets,
+        return_gv: bool = True,
+        inplace: bool = True,
+        g: Graph = None,
+        directed: bool = True,
+    ):
         """
-        Compute and return a Boolean vertex property 'on_shortest' for vertices that lie on some shortest path
-        from the vertex at source_idx to any vertex in target_indices in an unweighted directed graph.
-        
-        The function performs the following steps:
-          1. Computes forward distances from the source vertex.
-          2. Computes reverse distances using a reversed graph view and an artificial source vertex.
-          3. Marks vertices that lie on a shortest path if the sum of forward and reverse distances matches 
-             a target's distance.
-        
-        Parameters:
-            source_idx (int): The index of the source vertex.
-            target_indices (List[int]): A list of target vertex indices.
-            inplace (bool, optional): If False (default), the computation is done on a copy of the graph; if True, 
-                                      the computation is performed in-place on the original graph.
-            g (Graph, optional): An optional graph to operate on; defaults to self.core.graph if not provided.
-            return_gv (bool, optional): If True, returns a GraphView filtered by the computed property; otherwise,
-                                        returns the Boolean property map.
-        
-        Returns:
-            Union[GraphView, PropertyMap]: A GraphView if return_gv is True, or the Boolean property map otherwise.
-        
-        Raises:
-            ValueError: If the source index or any target index is invalid.
+        Mark nodes that lie on *any* shortest path from a single `source` to one or
+        more `targets`.
+
+        This is a fast, allocation-light routine for large (unweighted) graphs. It
+        does not permanently attach properties to your graph; it only creates a
+        temporary boolean `on_sp` (on-shortest-path) property and, by default,
+        returns a `GraphView` filtered by it.
+
+        Behavior by mode
+        ----------------
+        If `directed=True` (default):
+            • Run 1 forward BFS from the source on G
+            • Run 1 reverse-view BFS per target on reversed(G)
+            • A vertex v is on-shortest-path iff
+                forward_dist[v] + reverse_dist[v] == forward_dist[target]
+
+        If `directed=False` (treat as undirected):
+            • Run 1 BFS from the source with `directed=False`
+            • Run 1 BFS from each target with `directed=False` (no reverse view)
+            • Combine target BFS results by elementwise min
+
+        Method (high level)
+        -------------------
+        1) Coerce inputs to integer vertex indices (accepts ints, Vertices, or
+        (layer_name, node_id_str) tuples via PropertyManager).
+        2) Compute forward distances from source.
+        3) Compute reverse/other-side distances from targets as described above.
+        4) Compute the set of required path lengths to each target.
+        5) Mark v as on-shortest if forward[v] + reverse[v] matches one of those lengths.
+        6) Return a GraphView over those vertices (or the raw boolean property).
+
+        Parameters
+        ----------
+        source : int | Vertex | tuple[str, str]
+            Source vertex, either by integer index, a graph-tool Vertex, or a
+            (layer_name, node_id_str) pair.
+        targets : list | tuple
+            One or more targets in the same accepted formats as `source`.
+        return_gv : bool, default True
+            If True, return a `GraphView` filtered to on-shortest vertices.
+            If False, return the boolean vertex PropertyMap instead.
+        inplace : bool, default True
+            If False, operate on a copy of `g`/core.graph before building the view.
+            (Useful if you plan to attach the property.)
+        g : Graph | None
+            Optional graph to use instead of `self.core.graph`.
+        directed : bool, default True
+            Whether to treat the graph as directed. If False, run undirected BFS.
+
+        Returns
+        -------
+        GraphView | PropertyMap
+            Filtered view (default) or the boolean vertex property.
+
+        Complexity
+        ----------
+        O((V + E) + T * (V + E)) in the worst case, where T = number of targets.
+        With a single target, it’s ~two BFS passes → O(V + E).
+
+        Examples
+        --------
+        # with layer/node labels
+        >>> searcher.compute_on_shortest(
+        ...     source=("layer1", "nodeA"),
+        ...     targets=[("layer2", "nodeB"), ("layer3", "nodeC")],
+        ... )
+
+        # with integer indices, undirected
+        >>> searcher.compute_on_shortest(42, [43, 44], directed=False)
         """
+        # 0) choose the working graph (copy if requested)
         g = g or self.core.graph
         if not inplace:
-            g_temp = g.copy()
+            g = g.copy()
+
+        # 1) coerce any labels / Vertex → int indices
+        #    (accepts int/Vertex or (layer_name, node_id_str))
+        source_idx = self._coerce_to_idx(source)
+        target_list = targets if isinstance(targets, (list, tuple)) else [targets]
+        target_indices = [self._coerce_to_idx(t) for t in target_list]
+
+        # 2) forward BFS from source
+        #    Use directed flag here so undirected mode works end-to-end.
+        forward_dist = shortest_distance(
+            g,
+            source=g.vertex(source_idx),
+            directed=directed,
+        )
+
+        inf = float("inf")
+
+        # 3) distances “from the other side”, depending on directedness
+        if directed:
+            # Directed case:
+            #   Create a reversed view and run BFS *from each target* back toward the source.
+            g_rev = GraphView(g, directed=True)
+            g_rev.set_reversed(True)
+
+            if len(target_indices) == 1:
+                reverse_dist = shortest_distance(
+                    g_rev, source=g_rev.vertex(target_indices[0]), directed=True
+                )
+            else:
+                # Combine per-target reverse-BFS by elementwise min
+                rev_min = g.new_vertex_property("double")
+                rev_min.a[:] = inf
+                for t in target_indices:
+                    d = shortest_distance(g_rev, source=g_rev.vertex(t), directed=True)
+                    rev_min.a = np.minimum(rev_min.a, d.a)
+                reverse_dist = rev_min
         else:
-            g_temp = g
+            # Undirected case:
+            #   No reverse view needed. Just run BFS from each target with directed=False.
+            if len(target_indices) == 1:
+                reverse_dist = shortest_distance(
+                    g, source=g.vertex(target_indices[0]), directed=False
+                )
+            else:
+                und_min = g.new_vertex_property("double")
+                und_min.a[:] = inf
+                for t in target_indices:
+                    d = shortest_distance(g, source=g.vertex(t), directed=False)
+                    und_min.a = np.minimum(und_min.a, d.a)
+                reverse_dist = und_min
 
-        try:
-            source = g_temp.vertex(source_idx)
-        except Exception as e:
-            raise ValueError(f"Invalid source index {source_idx}: {e}")
-        targets = []
-        for idx in target_indices:
-            try:
-                targets.append(g_temp.vertex(idx))
-            except Exception as e:
-                raise ValueError(f"Invalid target index {idx}: {e}")
+        # 4) set of required path lengths to each target
+        #    (filter out unreachable targets to avoid `inf` matching)
+        target_lengths = {
+            forward_dist[g.vertex(t)]
+            for t in target_indices
+            if forward_dist[g.vertex(t)] < inf
+        }
 
-        # Phase 1: Compute forward distances from the source.
-        forward_dist = shortest_distance(g_temp, source=source)
+        # Early exit: if no reachable targets, return empty selection
+        if not target_lengths:
+            on_sp_empty = g.new_vertex_property("bool")
+            return GraphView(g, vfilt=on_sp_empty) if return_gv else on_sp_empty
 
-        # Phase 2: Compute reverse distances using a reversed graph view.
-        original_reversed = g_temp.is_reversed()
-        g_temp.set_reversed(True)
-        art_source = g_temp.add_vertex()  # Add an artificial source vertex.
+        # 5) mark vertices on any shortest path
+        on_sp = g.new_vertex_property("bool")
+        for v in g.vertices():
+            d1 = forward_dist[v]
+            d2 = reverse_dist[v]
+            # v is on-shortest if both sides are reachable and the sum equals a
+            # forward distance to some target.
+            if d1 < inf and d2 < inf and (d1 + d2) in target_lengths:
+                on_sp[v] = True
 
-        # Create an edge property for weights (all real edges have weight 1).
-        w = g_temp.new_edge_property("int")
-        for e in g_temp.edges():
-            w[e] = 1
-        # For each target, add an edge from the artificial source with weight 0.
-        for t in targets:
-            e = g_temp.add_edge(art_source, t)
-            w[e] = 0
-
-        reverse_dist = shortest_distance(g_temp, source=art_source, weights=w)
-        # Revert to the original reversed state.
-        g_temp.set_reversed(original_reversed)
-
-        # Phase 3: Mark vertices on some shortest path.
-        target_dists = { forward_dist[t] for t in targets }
-        on_shortest_temp = g_temp.new_vertex_property("bool")
-        # Determine the number of original vertices (before adding the artificial vertex).
-        num_orig = g.num_vertices() if not inplace else g_temp.num_vertices() - 1
-        for v in g_temp.vertices():
-            # Skip the artificial vertex if operating in-place.
-            if inplace and int(v) >= num_orig:
-                continue
-            on_shortest_temp[v] = False
-            if forward_dist[v] == float("inf") or reverse_dist[v] == float("inf"):
-                continue
-            if forward_dist[v] + reverse_dist[v] in target_dists:
-                on_shortest_temp[v] = True
-
-        # Clean up modifications.
-        if inplace:
-            g_temp.remove_vertex(art_source, fast=True)
-            result_prop = on_shortest_temp
-        else:
-            # Map computed values from the temporary graph back to the original graph.
-            result_prop = g.new_vertex_property("bool")
-            for v in g.vertices():
-                result_prop[v] = on_shortest_temp[v]
-        if return_gv:
-            return GraphView(g, vfilt=result_prop)
-        else:
-            return result_prop
+        # 6) return either the filtered view or the raw boolean map
+        return GraphView(g, vfilt=on_sp) if return_gv else on_sp
 
     def _bfs_traversal(self, seed_vertices, vfilt, efilt, mode='downstream'):
         """
@@ -509,6 +595,12 @@ class OnionNetSearcher:
         After filtering, any vertices that become isolated (no remaining incident edges)
         are automatically pruned.
 
+        Vectorized to:
+        - look up the integer codes for source_label and target_label
+        - build a NumPy mask of edges whose (src_layer, tgt_layer) matches
+            one of the allowed pairs for forward/reverse/both
+        - return a pruned GraphView
+
         Parameters
         ----------
         source_label : str
@@ -538,97 +630,45 @@ class OnionNetSearcher:
         """
         g = self.core.graph
 
+        # 1) map human layer names to int codes
         try:
-            src_code = self.core.layer_name_to_code[source_label]
-            tgt_code = self.core.layer_name_to_code[target_label]
+            c1 = self.core.layer_name_to_code[source_label]
+            c2 = self.core.layer_name_to_code[target_label]
         except KeyError as e:
             raise KeyError(f"Unknown layer name: {e.args[0]}")
 
-        lh = g.vp['layer_hash']
+        # 2) pull out vertex-layer array and edges *with internal edge index*
+        lh_arr   = g.vp['layer_hash'].a
+        edges_tbl = g.get_edges([g.edge_index])   # columns: [src, tgt, eidx]
+        src_idx  = edges_tbl[:, 0]
+        tgt_idx  = edges_tbl[:, 1]
+        e_idx    = edges_tbl[:, 2].astype(int)    # internal edge indices
 
+        # 3) build the boolean mask row-aligned to edges_tbl
         if mode == "forward":
-            pred = lambda e: (
-                lh[e.source()] == src_code
-                and lh[e.target()] == tgt_code
-            )
+            mask = (lh_arr[src_idx] == c1) & (lh_arr[tgt_idx] == c2)
         elif mode == "reverse":
-            pred = lambda e: (
-                lh[e.source()] == tgt_code
-                and lh[e.target()] == src_code
-            )
+            mask = (lh_arr[src_idx] == c2) & (lh_arr[tgt_idx] == c1)
         elif mode == "both":
-            pred = lambda e: (
-                (lh[e.source()] == src_code and lh[e.target()] == tgt_code)
-                or
-                (lh[e.source()] == tgt_code and lh[e.target()] == src_code)
-            )
+            mask = ((lh_arr[src_idx] == c1) & (lh_arr[tgt_idx] == c2)) | \
+                ((lh_arr[src_idx] == c2) & (lh_arr[tgt_idx] == c1))
         else:
-            raise ValueError(
-                f"mode must be 'forward', 'reverse' or 'both', not {mode!r}"
-            )
+            raise ValueError(f"mode must be 'forward','reverse' or 'both', not {mode!r}")
 
-        return self.filter_edges(pred)
+        # 4) write mask into efilt *using* the internal edge indices
+        efilt = g.new_edge_property("bool")
+        efilt.a = np.zeros(g.num_edges(), dtype=bool)
+        efilt.a[e_idx] = mask
+
+        gv = GraphView(g, efilt=efilt)
+        return self._prune_isolated(gv)
 
 
-    def create_bipartite_gv(
-        self,
-        layer1: str,
-        layer2: str,
-        prop_name: str = "layer_decoded"
-    ) -> GraphView:
-        """
-        Create a bipartite GraphView: all edges between two specified layers,
-        in either direction, then prune isolated vertices.
-
-        This picks up any edges connecting layer1 to layer2 (or vice versa)
-        and returns a view containing exactly those edges and their incident vertices.
-
-        If prop_name == 'layer_decoded' and that property does not exist,
-        it will be built on the fly by decoding the mandatory 'layer_hash'
-        via self.core.layer_code_to_name.
-
-        Parameters
-        ----------
-        layer1 : str
-            Human-readable name of the first layer; must exist in
-            self.core.layer_name_to_code, else KeyError.
-        layer2 : str
-            Human-readable name of the second layer; must exist in
-            self.core.layer_name_to_code, else KeyError.
-        prop_name : str, optional
-            Name of a vertex-property (string) that decodes layer_hash to names.
-            If 'layer_decoded' and not already present, it's generated on the fly.
-            Any other missing prop_name will cause KeyError.
-
-        Returns
-        -------
-        GraphView
-            A filtered, pruned view containing only cross-layer edges and
-            their vertices.
-
-        Raises
-        ------
-        KeyError
-            If prop_name is not 'layer_decoded' and not found in g.vp,
-            or if layer1 or layer2 are unknown.
-        """
-        g = self.core.graph
-
-        # ensure string decoding exists if requested
-        if prop_name not in g.vp:
-            if prop_name == "layer_decoded":
-                vp = g.new_vertex_property("string")
-                lh_map = g.vp['layer_hash']
-                for v in g.vertices():
-                    code = int(lh_map[v])
-                    vp[v] = self.core.layer_code_to_name.get(code, f"Unknown({code})")
-                g.vp[prop_name] = vp
-            else:
-                raise KeyError(f"Vertex property '{prop_name}' does not exist.")
-
-        # just delegate to the 'both' mode of our new filter
-        return self.filter_edges_between_categories(
-            source_label=layer1,
-            target_label=layer2,
-            mode="both"
-        )
+    def create_bipartite_gv(self, layer1: str, layer2: str, prop_name: str = "layer_decoded") -> GraphView:
+        # Back-compat note: prop_name is ignored; layer_decoded is not required anymore.
+        # You can optionally warn here if you like.
+        # warnings.warn("create_bipartite_gv is a thin wrapper. Use filter_edges_between_categories(..., mode='both').",
+        #               DeprecationWarning)
+        if prop_name != "layer_decoded":
+            raise KeyError("prop_name is ignored now; only 'layer_decoded' was ever supported.")
+        return self.filter_edges_between_categories(layer1, layer2, mode="both")

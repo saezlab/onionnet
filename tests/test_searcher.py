@@ -732,3 +732,203 @@ def test_create_bipartite_prune_isolated(builder_and_core):
     # only A→B should survive, C and the self‐edge on A→A pruned
     assert gv.num_edges() == 1
     assert set(int(v) for v in gv.vertices()) == {0, 1}
+
+
+def test_filter_edges_between_categories_modes(builder_and_core):
+    """
+    Building a 3-node graph A@L1→B@L2 and B@L2→C@L1:
+      - forward('L1','L2')  should yield only A→B
+      - reverse('L1','L2')  should yield only B→C
+      - both('L1','L2')     should yield both edges
+    """
+    bldr, core = builder_and_core
+    # 1) nodes A@L1, B@L2, C@L1
+    df_n = pd.DataFrame({
+        "node_id":    ["A",  "B",  "C"],
+        "layer":      ["L1", "L2", "L1"],
+    })
+    bldr.add_vertices_from_dataframe(df_n, "node_id", "layer", drop_na=False)
+
+    # 2) two edges: A(L1)->B(L2) and B(L2)->C(L1)
+    df_e = pd.DataFrame({
+        "source_id":    ["A",    "B"],
+        "source_layer": ["L1",   "L2"],
+        "target_id":    ["B",    "C"],
+        "target_layer": ["L2",   "L1"],
+    })
+    bldr.add_edges_from_dataframe(
+        df_e,
+        "source_id", "source_layer",
+        "target_id", "target_layer",
+        property_cols=["source_layer","target_layer"],
+        drop_na=False
+    )
+
+    s = OnionNetSearcher(core)
+
+    # forward: only A->B
+    gv_fwd = s.filter_edges_between_categories("L1","L2", mode="forward")
+    edges_fwd = {(int(e.source()), int(e.target())) for e in gv_fwd.edges()}
+    assert edges_fwd == {(0,1)}
+    verts_fwd = {int(v) for v in gv_fwd.vertices()}
+    assert verts_fwd == {0,1}
+
+    # reverse: only B->C
+    gv_rev = s.filter_edges_between_categories("L1","L2", mode="reverse")
+    edges_rev = {(int(e.source()), int(e.target())) for e in gv_rev.edges()}
+    assert edges_rev == {(1,2)}
+    verts_rev = {int(v) for v in gv_rev.vertices()}
+    assert verts_rev == {1,2}
+
+    # both: both edges
+    gv_both = s.filter_edges_between_categories("L1","L2", mode="both")
+    edges_both = {(int(e.source()), int(e.target())) for e in gv_both.edges()}
+    assert edges_both == {(0,1),(1,2)}
+    verts_both = {int(v) for v in gv_both.vertices()}
+    assert verts_both == {0,1,2}
+
+
+def test_create_bipartite_gv_is_symmetric(builder_and_core):
+    """
+    create_bipartite_gv('L1','L2') and create_bipartite_gv('L2','L1')
+    should yield identical sets of nodes & edges (since it uses mode='both').
+    """
+    bldr, core = builder_and_core
+    # nodes A@L1, B@L2, C@L1
+    df_n = pd.DataFrame({
+        "node_id": ["A","B","C"],
+        "layer":   ["L1","L2","L1"]
+    })
+    bldr.add_vertices_from_dataframe(df_n, "node_id","layer", drop_na=False)
+    # edges A(L1)->B(L2) and B(L2)->C(L1)
+    df_e = pd.DataFrame({
+        "source_id":    ["A","B"],
+        "source_layer": ["L1","L2"],
+        "target_id":    ["B","C"],
+        "target_layer": ["L2","L1"]
+    })
+    bldr.add_edges_from_dataframe(
+        df_e,
+        "source_id","source_layer",
+        "target_id","target_layer",
+        property_cols=None,
+        drop_na=False
+    )
+
+    s = OnionNetSearcher(core)
+    gv12 = s.create_bipartite_gv("L1","L2")
+    gv21 = s.create_bipartite_gv("L2","L1")
+
+    # compare edge‐sets
+    e12 = {(int(e.source()), int(e.target())) for e in gv12.edges()}
+    e21 = {(int(e.source()), int(e.target())) for e in gv21.edges()}
+    assert e12 == e21 == {(0,1),(1,2)}
+
+    # compare vertex‐sets
+    v12 = {int(v) for v in gv12.vertices()}
+    v21 = {int(v) for v in gv21.vertices()}
+    assert v12 == v21 == {0,1,2}
+
+
+#### Tests for compute_on_shortest with directed/undirected shortcuts ----
+
+
+def test_on_shortest_directed_vs_undirected_shortcut():
+    # A->B->C->D, plus a reverse edge D->B
+    # Directed A→D shortest: A-B-C-D (len=3) → {A,B,C,D}
+    # Undirected shortest: A-B-D via B–D (len=2) → {A,B,D}
+    core = OnionNetGraph(directed=True)
+    b = OnionNetBuilder(core)
+    b.add_vertices_from_dataframe(
+        pd.DataFrame({"node_id":["A","B","C","D"], "layer":["0"]*4}),
+        "node_id","layer", drop_na=False
+    )
+    b.add_edges_from_dataframe(
+        pd.DataFrame({
+            "source_id":["A","B","C","D"],
+            "source_layer":["0","0","0","0"],
+            "target_id":["B","C","D","B"],  # reverse-only shortcut
+            "target_layer":["0","0","0","0"],
+        }),
+        "source_id","source_layer","target_id","target_layer",
+        property_cols=None, drop_na=False
+    )
+
+    s = OnionNetSearcher(core)
+    gv_dir   = s.compute_on_shortest(source=0, targets=[3], directed=True,  return_gv=True)
+    gv_undir = s.compute_on_shortest(source=0, targets=[3], directed=False, return_gv=True)
+
+    assert {int(v) for v in gv_dir.vertices()}   == {0,1,2,3}
+    assert {int(v) for v in gv_undir.vertices()} == {0,1,3}
+
+
+def test_on_shortest_reverse_only_path_unreachable_directed():
+    # Only edges C->B and B->A; from A to C:
+    # directed=True: unreachable → empty view
+    # directed=False: A–B–C reachable → {A,B,C}
+    core = OnionNetGraph(directed=True)
+    b = OnionNetBuilder(core)
+    b.add_vertices_from_dataframe(
+        pd.DataFrame({"node_id":["A","B","C"], "layer":["0","0","0"]}),
+        "node_id","layer", drop_na=False
+    )
+    b.add_edges_from_dataframe(
+        pd.DataFrame({
+            "source_id":["C","B"], "source_layer":["0","0"],
+            "target_id":["B","A"], "target_layer":["0","0"],
+        }),
+        "source_id","source_layer","target_id","target_layer",
+        property_cols=None, drop_na=False
+    )
+
+    s = OnionNetSearcher(core)
+    gv_dir   = s.compute_on_shortest(source=0, targets=[2], directed=True,  return_gv=True)
+    gv_undir = s.compute_on_shortest(source=0, targets=[2], directed=False, return_gv=True)
+
+    assert sum(1 for _ in gv_dir.vertices()) == 0
+    assert {int(v) for v in gv_undir.vertices()} == {0,1,2}
+
+
+def test_on_shortest_multi_target_undirected_union():
+    # Chain A-B-C-D plus E attached to C.
+    # From A to {D,E} undirected: union {A,B,C,D,E}
+    core = OnionNetGraph(directed=True)
+    b = OnionNetBuilder(core)
+    b.add_vertices_from_dataframe(
+        pd.DataFrame({"node_id":["A","B","C","D","E"], "layer":["0"]*5}),
+        "node_id","layer", drop_na=False
+    )
+    b.add_edges_from_dataframe(
+        pd.DataFrame({
+            "source_id":["A","B","C","C"],
+            "source_layer":["0","0","0","0"],
+            "target_id":["B","C","D","E"],
+            "target_layer":["0","0","0","0"],
+        }),
+        "source_id","source_layer","target_id","target_layer",
+        property_cols=None, drop_na=False
+    )
+
+    s = OnionNetSearcher(core)
+    gv = s.compute_on_shortest(source=0, targets=[3,4], directed=False, return_gv=True)
+    assert {int(v) for v in gv.vertices()} == {0,1,2,3,4}
+
+
+def test_on_shortest_accepts_name_tuples_and_directed_flag():
+    core = OnionNetGraph(directed=True)
+    b = OnionNetBuilder(core)
+    b.add_vertices_from_dataframe(
+        pd.DataFrame({"node_id":["A","B"], "layer":["L","L"]}),
+        "node_id","layer", drop_na=False
+    )
+    b.add_edges_from_dataframe(
+        pd.DataFrame({
+            "source_id":["A"], "source_layer":["L"],
+            "target_id":["B"], "target_layer":["L"],
+        }),
+        "source_id","source_layer","target_id","target_layer",
+        property_cols=None, drop_na=False
+    )
+    s = OnionNetSearcher(core)
+    gv = s.compute_on_shortest(source=("L","A"), targets=[("L","B")], directed=False, return_gv=True)
+    assert {int(v) for v in gv.vertices()} == {0,1}
