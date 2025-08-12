@@ -20,14 +20,6 @@ onionnet.core module
    :show-inheritance:
    :undoc-members:
 
-onionnet.exporter module
-------------------------
-
-.. automodule:: onionnet.exporter
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
 onionnet.onionnet module
 ------------------------
 
@@ -52,6 +44,22 @@ onionnet.searcher module
    :show-inheritance:
    :undoc-members:
 
+onionnet.visualisation module
+-----------------------------
+
+.. automodule:: onionnet.visualisation
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+onionnet.analytics module
+------------------------
+
+.. automodule:: onionnet.analytics
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 onionnet.utils module
 ---------------------
 
@@ -60,10 +68,10 @@ onionnet.utils module
    :show-inheritance:
    :undoc-members:
 
-onionnet.visualisation module
------------------------------
+onionnet.exporter module
+------------------------
 
-.. automodule:: onionnet.visualisation
+.. automodule:: onionnet.exporter
    :members:
    :show-inheritance:
    :undoc-members:
