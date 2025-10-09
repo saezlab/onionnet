@@ -81,13 +81,14 @@ class OnionNetGraph:
         Returns:
             int: The integer code corresponding to the layer.
         """
-        if layer_name in self.layer_name_to_code:
-            return self.layer_name_to_code[layer_name]
-        else:
-            code = len(self.layer_name_to_code)
-            self.layer_name_to_code[layer_name] = code
-            self.layer_code_to_name[code] = layer_name
-            return code
+        # Treat layer names as-is (no whitespace normalization)
+        key = str(layer_name)
+        if key in self.layer_name_to_code:
+            return self.layer_name_to_code[key]
+        code = len(self.layer_name_to_code)
+        self.layer_name_to_code[key] = code
+        self.layer_code_to_name[code] = key
+        return code
     
     def _map_node_id(self, node_id_str: str) -> int:
         """

@@ -138,22 +138,27 @@ class OnionNetBuilder:
         self._stats['nodes_deduped'] = len(df_n_no_na) - len(df_n_clean)
         self._stats['edges_deduped'] = len(df_e_no_na) - len(df_e_clean)
 
-        # 3) Edge→node alignment: drop edges whose endpoints weren’t ingested
-        #    we’ll let add_edges_from_dataframe do the final warning, but for stats:
-        #    build the valid-edge index mask before passing to add_edges
-        #    (note: add_edges_from_dataframe will repeat the int-mapping, so we just
-        #     need the count here)
-        # temporarily map through your core.custom_id_to_vertex_index dict
-        src_pairs = list(zip(df_e_clean[edge_source_layer_col].astype(str),
-                             df_e_clean[edge_source_id_col].astype(str)))
-        tgt_pairs = list(zip(df_e_clean[edge_target_layer_col].astype(str),
-                             df_e_clean[edge_target_id_col].astype(str)))
-        src_idx = [self.core.custom_id_to_vertex_index.get(self.core._map_layer(l), 
-                      self.core._map_node_id(i)) for l,i in src_pairs]
-        tgt_idx = [self.core.custom_id_to_vertex_index.get(self.core._map_layer(l), 
-                      self.core._map_node_id(i)) for l,i in tgt_pairs]
-        valid_mask = [(s is not None and t is not None) for s,t in zip(src_idx, tgt_idx)]
-        df_e_valid = df_e_clean[valid_mask]
+        # 3) Edge→node alignment: drop edges whose endpoints weren’t ingested (by name)
+        #    Do NOT mutate the core mapping when validating; use the node df only.
+        node_pairs = set(zip(
+            df_n_clean[node_layer_col].astype(str),
+            df_n_clean[node_id_col].astype(str)
+        ))
+        # include already present vertices in the graph as valid endpoints
+        for (li, ni), _vid in list(self.core.custom_id_to_vertex_index.items()):
+            layer_name = self.core.layer_code_to_name.get(li)
+            node_name  = self.core.node_id_int_to_str.get(ni)
+            if layer_name is not None and node_name is not None:
+                node_pairs.add((str(layer_name), str(node_name)))
+        keep_rows = []
+        for idx, row in df_e_clean.iterrows():
+            s_pair = (str(row[edge_source_layer_col]), str(row[edge_source_id_col]))
+            t_pair = (str(row[edge_target_layer_col]), str(row[edge_target_id_col]))
+            if s_pair in node_pairs and t_pair in node_pairs:
+                keep_rows.append(True)
+            else:
+                keep_rows.append(False)
+        df_e_valid = df_e_clean.loc[df_e_clean.index[keep_rows]]
 
         # record how many edges were invalidated by missing endpoints
         invalid_endpoints = len(df_e_clean) - len(df_e_valid)
@@ -174,12 +179,31 @@ class OnionNetBuilder:
             id_col=node_id_col, layer_col=node_layer_col,
             property_cols=node_prop_cols,
             drop_na=False,                  # already cleaned
-            drop_duplicates=False,          # already cleaned
+            drop_duplicates=drop_duplicates,  # control cross-graph dedup of vertices
             string_override=False,
             property_types=vertex_property_types
         )
+        # Optional: further drop edges already present in the graph when dedup requested
+        df_e_to_add = df_e_valid
+        if drop_duplicates and self.core.graph.num_edges() > 0 and not df_e_valid.empty:
+            # Build existing edge set (src_idx, tgt_idx)
+            existing = {(int(e.source()), int(e.target())) for e in self.core.graph.edges()}
+            # Prepare mapping from (layer,name) -> vertex index using current core map (after vertices added)
+            def _pair_to_idx(layer_str, node_str):
+                li = self.core.layer_name_to_code.get(str(layer_str))
+                ni = self.core.node_id_str_to_int.get(str(node_str))
+                if li is None or ni is None:
+                    return None
+                return self.core.custom_id_to_vertex_index.get((li, ni))
+            mask = []
+            for _, r in df_e_valid.iterrows():
+                s = _pair_to_idx(r[edge_source_layer_col], r[edge_source_id_col])
+                t = _pair_to_idx(r[edge_target_layer_col], r[edge_target_id_col])
+                mask.append((s, t) not in existing)
+            df_e_to_add = df_e_valid.loc[df_e_valid.index[mask]]
+
         self.add_edges_from_dataframe(
-            df_e_valid,
+            df_e_to_add,
             source_id_col=edge_source_id_col, source_layer_col=edge_source_layer_col,
             target_id_col=edge_target_id_col, target_layer_col=edge_target_layer_col,
             property_cols=edge_prop_cols,
@@ -259,21 +283,33 @@ class OnionNetBuilder:
         # cast keys
         df[id_col]   = df[id_col].astype(str)
         df[layer_col] = df[layer_col].astype(str)
-        # map ints
+        # map to ints (without creating duplicates already present)
         df['layer_int']    = df[layer_col].apply(self.core._map_layer)
         df['node_id_int']  = df[id_col].apply(self.core._map_node_id)
         custom_ids = list(zip(df['layer_int'], df['node_id_int']))
-        n_new = len(custom_ids)
+
+        # Determine which vertices are new vs existing
+        existing_map = self.core.custom_id_to_vertex_index
+        if drop_duplicates:
+            is_new = [cid not in existing_map for cid in custom_ids]
+        else:
+            # treat all as new (allow duplicates across graph)
+            is_new = [True] * len(custom_ids)
+        new_rows_idx = [i for i, flag in enumerate(is_new) if flag]
+
+        n_new = len(new_rows_idx)
         start = self.core.graph.num_vertices()
-        self.core.graph.add_vertex(n_new)
-        # new_idx = np.arange(start, start+n_new, dtype=np.int64) #<--- previously
-        # use Python ints so downstream code/test isinstance(idx, int) passes and for more numerical stability
-        new_idx = list(range(start, start+n_new))
-        self.core.custom_id_to_vertex_index.update(zip(custom_ids, new_idx))
-        self.core.vertex_index_to_custom_id.update(zip(new_idx, custom_ids))
-        # bulk core props
-        self.core.graph.vp['layer_hash'].a[start:]   = df['layer_int'].values
-        self.core.graph.vp['node_id_hash'].a[start:] = df['node_id_int'].values
+        if n_new:
+            self.core.graph.add_vertex(n_new)
+            new_idx = [start + i for i in range(n_new)]
+            # update mappings only for new vertices
+            for row_pos, v_idx in zip(new_rows_idx, new_idx):
+                cid = custom_ids[row_pos]
+                self.core.custom_id_to_vertex_index[cid] = v_idx
+                self.core.vertex_index_to_custom_id[v_idx] = cid
+            # bulk core props for new vertices only
+            self.core.graph.vp['layer_hash'].a[start:]   = df['layer_int'].values[new_rows_idx]
+            self.core.graph.vp['node_id_hash'].a[start:] = df['node_id_int'].values[new_rows_idx]
         # additional props
         if property_cols:
             for prop in property_cols:
@@ -282,7 +318,14 @@ class OnionNetBuilder:
                 if typ in ['int','float'] and not string_override:
                     if prop not in self.core.graph.vp:
                         self.core.graph.vp[prop] = self.core.graph.new_vertex_property(typ)
-                    self.core.graph.vp[prop].a[start:] = vals
+                    # assign values for both existing and new vertices
+                    if n_new:
+                        self.core.graph.vp[prop].a[start:] = vals[new_rows_idx]
+                    # also write values for existing vertices at their indices (idempotent overwrite)
+                    for i, cid in enumerate(custom_ids):
+                        if not is_new[i]:
+                            v_idx = self.core.custom_id_to_vertex_index[cid]
+                            self.core.graph.vp[prop][self.core.graph.vertex(v_idx)] = vals[i]
                 else:
                     # extend existing mapping instead of restarting it
                     if prop in self.core.vertex_categorical_mappings:
@@ -306,7 +349,24 @@ class OnionNetBuilder:
                     # ensure the vp exists and assign
                     if prop not in self.core.graph.vp:
                         self.core.graph.vp[prop] = self.core.graph.new_vertex_property('int')
-                    self.core.graph.vp[prop].a[start:] = np.array(mapped, dtype=int)
+                    if n_new:
+                        self.core.graph.vp[prop].a[start:] = np.array([mapped[i] for i in new_rows_idx], dtype=int)
+                    for i, cid in enumerate(custom_ids):
+                        if not is_new[i]:
+                            v_idx = self.core.custom_id_to_vertex_index[cid]
+                            self.core.graph.vp[prop][self.core.graph.vertex(v_idx)] = int(mapped[i])
+        # Property-type conflict detection for vertices
+        if property_cols and (property_types or string_override):
+            for prop in property_cols:
+                if prop in self.core.graph.vp:
+                    # If previously tracked as categorical, forbid switching to numeric
+                    if prop in self.core.vertex_categorical_mappings:
+                        if property_types and prop in property_types and property_types[prop] in ("int","float"):
+                            raise ValueError(f"Vertex property '{prop}' was categorical; cannot ingest as numeric.")
+                    else:
+                        # previously numeric; forbid switching to categorical
+                        if (property_types and prop in property_types and property_types[prop] in ("str","string")) or string_override:
+                            raise ValueError(f"Vertex property '{prop}' was numeric; cannot ingest as categorical.")
 
 
     def add_edges_from_dataframe(
@@ -400,14 +460,42 @@ class OnionNetBuilder:
                 "No valid edges to add: all edges reference missing vertices.", UserWarning
             )
             return
-        edge_arr = np.column_stack((
-            [src_idx[i] for i in valid],
-            [tgt_idx[i] for i in valid]
-        ))
+        # If drop_duplicates requested, collapse duplicates within this batch,
+        # optionally considering property values in the definition of duplicate.
+        src_valid = [src_idx[i] for i in valid]
+        tgt_valid = [tgt_idx[i] for i in valid]
+        if drop_duplicates:
+            df_valid = df.iloc[valid]
+            seen = set()
+            new_valid = []
+            for k, (s, t) in enumerate(zip(src_valid, tgt_valid)):
+                if consider_props_in_duplicate and property_cols:
+                    key = (s, t) + tuple(df_valid.iloc[k][p] for p in property_cols)
+                else:
+                    key = (s, t)
+                if key in seen:
+                    continue
+                seen.add(key)
+                new_valid.append(valid[k])
+            valid = new_valid
+            src_valid = [src_idx[i] for i in valid]
+            tgt_valid = [tgt_idx[i] for i in valid]
+        edge_arr = np.column_stack((src_valid, tgt_valid))
         # properties
         prop_vals = []
         prop_maps = []
         if property_cols:
+            # Edge property-type conflict detection
+            for prop in property_cols:
+                if prop in self.core.graph.ep:
+                    if prop in self.core.edge_categorical_mappings:
+                        # previously categorical, forbid switching to numeric
+                        if property_types and prop in property_types and property_types[prop] in ("int","float"):
+                            raise ValueError(f"Edge property '{prop}' was categorical; cannot ingest as numeric.")
+                    else:
+                        # previously numeric, forbid switching to categorical
+                        if (property_types and prop in property_types and property_types[prop] in ("str","string")) or (string_override and (not property_types or prop not in property_types)):
+                            raise ValueError(f"Edge property '{prop}' was numeric; cannot ingest as categorical.")
             for prop in property_cols:
                 vals = df.iloc[valid][prop].values
                 typ = property_types.get(prop) if property_types and prop in property_types else infer_property_type(df[prop])
