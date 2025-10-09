@@ -1018,7 +1018,7 @@ def test_whitespace_layer_current_behavior(builder_and_core):
     })
     bldr.add_vertices_from_dataframe(df, "node_id", "layer", drop_na=False)
     codes = {core._map_layer(l) for l in ["1", " 1", "1 "]}
-    # expect distinct because no trimming is implemented yet
+    # Expect distinct treatment of whitespace variants
     assert len(codes) == 3
 
 

@@ -732,9 +732,9 @@ def test_layer_key_normalization(builder_and_core):
         "layer": ["1"," 1","1 "]
     })
     bldr.add_vertices_from_dataframe(df, "node_id","layer", drop_na=False)
-    # if you *intend* to collapse them, expect a single layer→one code:
+    # Layers differing only by whitespace are treated as distinct
     codes = {core._map_layer(l) for l in ["1"," 1","1 "]}
-    assert len(codes) == 1
+    assert len(codes) == 3
 
 def test_edge_property_type_conflict(builder_and_core, toy_nodes, toy_edges):
     bldr, core = builder_and_core
