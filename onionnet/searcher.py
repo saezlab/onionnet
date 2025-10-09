@@ -142,7 +142,24 @@ class OnionNetSearcher:
             directed=directed,
         )
 
-        inf = float("inf")
+        inf_float = float("inf")
+        INF_INT = 2_147_483_647  # graph-tool sentinel for unreachable on int distances
+
+        def _is_reachable(d):
+            try:
+                # numpy scalars too
+                import numpy as _np
+                if isinstance(d, (_np.integer, int)):
+                    return int(d) < INF_INT
+                if isinstance(d, (_np.floating, float)):
+                    return float(d) < inf_float
+            except Exception:
+                pass
+            # fallback: best-effort float compare
+            try:
+                return float(d) < inf_float
+            except Exception:
+                return False
 
         # 3) distances “from the other side”, depending on directedness
         if directed:
@@ -158,7 +175,7 @@ class OnionNetSearcher:
             else:
                 # Combine per-target reverse-BFS by elementwise min
                 rev_min = g.new_vertex_property("double")
-                rev_min.a[:] = inf
+                rev_min.a[:] = inf_float
                 for t in target_indices:
                     d = shortest_distance(g_rev, source=g_rev.vertex(t), directed=True)
                     rev_min.a = np.minimum(rev_min.a, d.a)
@@ -172,7 +189,7 @@ class OnionNetSearcher:
                 )
             else:
                 und_min = g.new_vertex_property("double")
-                und_min.a[:] = inf
+                und_min.a[:] = inf_float
                 for t in target_indices:
                     d = shortest_distance(g, source=g.vertex(t), directed=False)
                     und_min.a = np.minimum(und_min.a, d.a)
@@ -183,12 +200,14 @@ class OnionNetSearcher:
         target_lengths = {
             forward_dist[g.vertex(t)]
             for t in target_indices
-            if forward_dist[g.vertex(t)] < inf
+            if _is_reachable(forward_dist[g.vertex(t)])
         }
 
         # Early exit: if no reachable targets, return empty selection
         if not target_lengths:
             on_sp_empty = g.new_vertex_property("bool")
+            # ensure all False
+            on_sp_empty.a = np.zeros(g.num_vertices(), dtype=bool)
             return GraphView(g, vfilt=on_sp_empty) if return_gv else on_sp_empty
 
         # 5) mark vertices on any shortest path
@@ -198,7 +217,7 @@ class OnionNetSearcher:
             d2 = reverse_dist[v]
             # v is on-shortest if both sides are reachable and the sum equals a
             # forward distance to some target.
-            if d1 < inf and d2 < inf and (d1 + d2) in target_lengths:
+            if _is_reachable(d1) and _is_reachable(d2) and (d1 + d2) in target_lengths:
                 on_sp[v] = True
 
         # 6) return either the filtered view or the raw boolean map
