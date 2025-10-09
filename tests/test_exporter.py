@@ -216,6 +216,17 @@ def test_export_invalid_return_type(simple_graph):
         export_info(simple_graph.graph, mode="v", return_type="xml")
 
 
+def test_export_vertices_to_dict_and_unknown_prop_raises(simple_graph):
+    core = simple_graph
+    d = export_info(core.graph, mode='v', return_type='dict')
+    assert isinstance(d, dict) and set(d.keys()) == set(range(core.graph.num_vertices()))
+    # entries include at least layer/node hashes and sample prop
+    any_entry = next(iter(d.values()))
+    assert 'layer_hash' in any_entry and 'node_id_hash' in any_entry
+    with pytest.raises(ValueError):
+        export_info(core.graph, mode='v', prop_names=['not_present'], return_type='pandas')
+
+
 # --- 8. Edge IDs when no edge_index ----------------------------------------
 
 def test_export_edges_e_id_none(builder_and_core):

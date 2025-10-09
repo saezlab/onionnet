@@ -89,11 +89,24 @@ def export_info(g, mode="v", prop_names=None, noisy=False, return_type="pandas")
 
             # --- normalize types for stable tests/serialization ---
             # numpy arrays / vector<double> -> list
+            converted = False
             if hasattr(val, "tolist"):
                 try:
                     val = val.tolist()
+                    converted = True
                 except Exception:
-                    pass
+                    converted = False
+            if not converted:
+                # fallback: generic iterable (but not string/bytes)
+                if isinstance(val, (list, tuple)):
+                    pass  # already OK
+                else:
+                    try:
+                        # treat as sequence if it is iterable and not a string-like
+                        if hasattr(val, "__iter__") and not isinstance(val, (str, bytes)):
+                            val = list(val)
+                    except Exception:
+                        pass
             # numpy scalars -> Python scalars
             if np is not None and isinstance(val, np.generic):
                 val = val.item()
