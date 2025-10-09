@@ -5,6 +5,7 @@ from onionnet.builder import OnionNetBuilder
 from onionnet.searcher import OnionNetSearcher
 from graph_tool.all import GraphView, shortest_distance
 import pandas as pd
+import graph_tool.all as gt
 
 
 # --- Fixtures --------------------------------------------------------------
@@ -932,3 +933,192 @@ def test_on_shortest_accepts_name_tuples_and_directed_flag():
     s = OnionNetSearcher(core)
     gv = s.compute_on_shortest(source=("L","A"), targets=[("L","B")], directed=False, return_gv=True)
     assert {int(v) for v in gv.vertices()} == {0,1}
+
+
+# ---- Additional comprehensive tests ----
+
+def make_simple_core():
+    core = OnionNetGraph(directed=True)
+    b = OnionNetBuilder(core)
+    df_nodes = pd.DataFrame({
+        'node_id': ['A', 'B', 'C', 'D'],
+        'layer':   ['L', 'L', 'R', 'R'],
+        'val':     [0, 1, 2, 3],
+    })
+    b.add_vertices_from_dataframe(df_nodes, 'node_id', 'layer', property_cols=['val'], drop_na=False)
+
+    df_edges = pd.DataFrame({
+        'source_id':    ['A', 'B', 'C', 'D'],
+        'source_layer': ['L', 'L', 'R', 'R'],
+        'target_id':    ['B', 'C', 'D', 'A'],
+        'target_layer': ['L', 'R', 'R', 'L'],
+        'w':            [1,   2,   3,   4],
+    })
+    b.add_edges_from_dataframe(df_edges, 'source_id', 'source_layer', 'target_id', 'target_layer', property_cols=['w'], drop_na=False)
+    return core
+
+
+def test_compute_on_shortest_unreachable_and_undirected():
+    core = OnionNetGraph(directed=True)
+    b = OnionNetBuilder(core)
+    df_nodes = pd.DataFrame({'node_id': ['X', 'Y'], 'layer': ['L', 'L']})
+    b.add_vertices_from_dataframe(df_nodes, 'node_id', 'layer', drop_na=False)
+    s = OnionNetSearcher(core)
+
+    # Unreachable target (no edge between X and Y) → empty view
+    gv_empty = s.compute_on_shortest(0, [1], return_gv=True)
+    assert gv_empty.num_vertices() == 0
+
+    # Undirected on a chain A-B-C
+    core2 = OnionNetGraph(directed=True)
+    b2 = OnionNetBuilder(core2)
+    df_n = pd.DataFrame({'node_id': ['A','B','C'], 'layer': ['L','L','L']})
+    b2.add_vertices_from_dataframe(df_n, 'node_id', 'layer', drop_na=False)
+    df_e = pd.DataFrame({
+        'source_id': ['A','B'], 'source_layer':['L','L'],
+        'target_id': ['B','C'], 'target_layer':['L','L']
+    })
+    b2.add_edges_from_dataframe(df_e, 'source_id','source_layer','target_id','target_layer', drop_na=False)
+    s2 = OnionNetSearcher(core2)
+    gv_dir = s2.compute_on_shortest(0, [2], return_gv=True, directed=True)
+    assert gv_dir.num_vertices() == 3
+    gv_undir = s2.compute_on_shortest(2, [0], return_gv=True, directed=False)
+    assert gv_undir.num_vertices() == 3
+
+
+def test__bfs_traversal_modes_and_error():
+    core = OnionNetGraph(directed=True)
+    b = OnionNetBuilder(core)
+    df_n = pd.DataFrame({'node_id':['A','B','C'], 'layer':['L','L','L']})
+    b.add_vertices_from_dataframe(df_n, 'node_id','layer', drop_na=False)
+    df_e = pd.DataFrame({
+        'source_id':['A','B'], 'source_layer':['L','L'],
+        'target_id':['B','C'], 'target_layer':['L','L']
+    })
+    b.add_edges_from_dataframe(df_e, 'source_id','source_layer','target_id','target_layer', drop_na=False)
+    s = OnionNetSearcher(core)
+    g = core.graph
+    vf = g.new_vertex_property('bool')
+    ef = g.new_edge_property('bool')
+    s._bfs_traversal([g.vertex(0)], vf, ef, mode='downstream')
+    assert vf[g.vertex(0)] and vf[g.vertex(1)] and vf[g.vertex(2)]
+    vf2 = g.new_vertex_property('bool'); ef2 = g.new_edge_property('bool')
+    s._bfs_traversal([g.vertex(2)], vf2, ef2, mode='upstream')
+    assert vf2[g.vertex(0)] and vf2[g.vertex(1)] and vf2[g.vertex(2)]
+    with pytest.raises(ValueError):
+        s._bfs_traversal([g.vertex(0)], vf, ef, mode='sideways')
+
+
+def test_filter_view_by_property_vertices_and_edges():
+    core = make_simple_core()
+    s = OnionNetSearcher(core)
+    g = core.graph
+    gv_v = s.filter_view_by_property('val', 2, comparison='>=', dim='v', prune_isolated=False)
+    vs = {int(v) for v in gv_v.vertices()}
+    assert vs == {2, 3}
+    gv_v2 = s.filter_view_by_property('val', {0,1,2,3}, dim='v', prune_isolated=True)
+    assert isinstance(gv_v2, gt.GraphView)
+    gv_e = s.filter_view_by_property('w', {2, 4}, dim='e', prune_isolated=True)
+    assert all((v.out_degree() + v.in_degree()) > 0 for v in gv_e.vertices())
+    with pytest.raises(ValueError):
+        s.filter_view_by_property('nope', 1, dim='v')
+    with pytest.raises(ValueError):
+        s.filter_view_by_property('nope', 1, dim='e')
+
+
+def test_compose_filters_and_modes():
+    core = make_simple_core()
+    s = OnionNetSearcher(core)
+    g = core.graph
+    f_gt0 = lambda v: g.vp['val'][v] > 0
+    f_even = lambda v: (g.vp['val'][v] % 2) == 0
+    gv = s.compose_filters([f_gt0, f_even], mode='and', type='v')
+    vals = [g.vp['val'][v] for v in gv.vertices()]
+    assert set(map(int, vals)) == {2}
+    pm = s.compose_filters([f_gt0, f_even], mode='or', type='v', return_prop=True)
+    assert hasattr(pm, 'a')
+    assert pm.a.sum() >= 1
+    e_ge3 = lambda e: g.ep['w'][e] >= 3
+    gv2 = s.compose_filters([e_ge3], type='e')
+    assert all(g.ep['w'][e] >= 3 for e in gv2.edges())
+    with pytest.raises(ValueError):
+        s.compose_filters([f_gt0], mode='xor')
+    with pytest.raises(ValueError):
+        s.compose_filters([f_gt0], type='x')
+
+
+def test_filter_edges_between_categories_and_bipartite():
+    core = make_simple_core()
+    s = OnionNetSearcher(core)
+    gv_fwd = s.filter_edges_between_categories('L', 'R', mode='forward')
+    assert gv_fwd.num_edges() >= 1
+    gv_rev = s.filter_edges_between_categories('L', 'R', mode='reverse')
+    assert gv_rev.num_edges() >= 1
+    gv_both = s.filter_edges_between_categories('L', 'R', mode='both')
+    assert gv_both.num_edges() == gv_fwd.num_edges() + gv_rev.num_edges()
+    with pytest.raises(KeyError):
+        s.filter_edges_between_categories('X', 'R')
+    with pytest.raises(ValueError):
+        s.filter_edges_between_categories('L', 'R', mode='nope')
+    gv_bi = s.create_bipartite_gv('L', 'R')
+    assert isinstance(gv_bi, gt.GraphView)
+    with pytest.raises(KeyError):
+        s.create_bipartite_gv('L', 'R', prop_name='other')
+
+
+def test_search_bidirectional_with_children():
+    core = OnionNetGraph(directed=True)
+    b = OnionNetBuilder(core)
+    df_n = pd.DataFrame({'node_id':['A','B','C'], 'layer':['L','L','L']})
+    b.add_vertices_from_dataframe(df_n, 'node_id','layer', drop_na=False)
+    df_e = pd.DataFrame({
+        'source_id':['A','C'], 'source_layer':['L','L'],
+        'target_id':['B','B'], 'target_layer':['L','L']
+    })
+    b.add_edges_from_dataframe(df_e, 'source_id','source_layer','target_id','target_layer', drop_na=False)
+    s = OnionNetSearcher(core)
+    gv = s.search(start_node_idx=1, max_dist=1, direction='bi', include_upstream_children=True, show_plot=False)
+    vs = {int(v) for v in gv.vertices()}
+    assert vs == {0,1,2}
+
+
+def test_filter_edges_predicate_and_prune():
+    core = make_simple_core()
+    s = OnionNetSearcher(core)
+    g = core.graph
+    gv = s.filter_edges(lambda e: (g.ep['w'][e] % 2) == 1)
+    for e in gv.edges():
+        assert g.ep['w'][e] % 2 == 1
+    for v in gv.vertices():
+        assert (v.out_degree() + v.in_degree()) > 0
+    epm = s.filter_edges(lambda e: True, return_view=False)
+    assert hasattr(epm, 'a') and len(epm.a) == g.num_edges() and epm.a.sum() == g.num_edges()
+
+
+def test_search_plotting_paths_with_monkeypatch(monkeypatch):
+    core = OnionNetGraph(directed=True)
+    b = OnionNetBuilder(core)
+    df_n = pd.DataFrame({'node_id':['A','B'], 'layer':['L','L']})
+    b.add_vertices_from_dataframe(df_n, 'node_id','layer', drop_na=False)
+    df_e = pd.DataFrame({'source_id':['A'], 'source_layer':['L'], 'target_id':['B'], 'target_layer':['L']})
+    b.add_edges_from_dataframe(df_e, 'source_id','source_layer','target_id','target_layer', drop_na=False)
+    s = OnionNetSearcher(core)
+
+    called = {'n': 0}
+    def fake_draw(g, **kwargs):
+        called['n'] += 1
+        assert 'vertex_text' in kwargs
+        return None
+
+    import onionnet.searcher as searcher_mod
+    monkeypatch.setattr(searcher_mod, 'graph_draw', fake_draw)
+
+    s.search(start_node_idx=0, max_dist=1, direction='any', show_plot=True)
+    from onionnet.property_manager import OnionNetPropertyManager
+    OnionNetPropertyManager(core).create_node_label_property('node_label')
+    s.search(start_node_idx=0, max_dist=1, direction='downstream', show_plot=True, verbosity=True)
+    assert called['n'] >= 2
+    gv_copy = s.view_layers(['L'], copy_gv=True)
+    assert isinstance(gv_copy, gt.Graph)
+    with pytest.raises(ValueError):
+        s.search(start_node_idx=0, max_dist=1, direction='SIDEWAYS', show_plot=False)
