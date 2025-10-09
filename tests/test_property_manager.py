@@ -1043,8 +1043,16 @@ def test_summary_invariants_complex(builder_and_core):
     summary = bldr.summary()
     # parse counts
     def parse_line(line):
-        parts = {k: int(v) for k, v in
-                 [p.split("=", 1) for p in line.replace(" → ", ",").split(", ")]}
+        # Drop optional label prefix like 'Nodes: ' or 'Edges: '
+        if ": " in line:
+            line = line.split(": ", 1)[1]
+        # Normalize the arrow into a comma+space so we split cleanly
+        line = line.replace(" → ", ", ")
+        parts = {}
+        for tok in line.split(", "):
+            if "=" in tok:
+                k, v = tok.split("=", 1)
+                parts[k.strip()] = int(v.strip())
         return parts
     node_line, edge_line = summary.splitlines()
     n = parse_line(node_line)

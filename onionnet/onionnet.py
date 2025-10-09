@@ -199,7 +199,7 @@ class OnionNet:
         Look up the integer code for a categorical property value
         so you can build GraphView filters without digging into internals.
         """
-        return self.prop_manager.get_category_code(prop_name, category_label, dim)
+        return self.prop_manager.get_category_code(*args, **kwargs)
 
     @property
     def node_map(self) -> Dict[Tuple[str, str], int]:

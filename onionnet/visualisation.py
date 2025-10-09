@@ -717,7 +717,9 @@ def layout_by_layer(g, layer_prop_name='layer_decoded', spacing=50, epsilon=1e-2
     ys = [pos[v][1] for v in g.vertices()]
     width = max(xs) - min(xs)
     height = max(ys) - min(ys)
-    if width < epsilon or height < epsilon:
+    # Require horizontal separation; require vertical spread only if any layer has 2+ vertices
+    need_height_check = any(len(verts) > 1 for verts in layer_dict.values())
+    if width < epsilon or (need_height_check and height < epsilon):
         raise ValueError("Layout bounding box is degenerate. Increase spacing or epsilon.")
     return pos
 
@@ -1041,27 +1043,34 @@ def prop_to_size(g, prop, mi=1, ma=8, power=1, transform_func=None, mode='v'):
     size_prop : graph_tool.PropertyMap
         A property map with the scaled sizes, either a vertex or edge property map based on mode.
     """
+    # 1) coerce to numeric array (preserve original range for normalization)
     try:
-        arr = np.array(prop, dtype=float)
+        raw = np.array(prop, dtype=float)
     except Exception:
-        arr = np.array(list(prop), dtype=float)
-        
+        raw = np.array(list(prop), dtype=float)
+
+    # 2) optional transform (vectorized fallback)
     if transform_func is not None:
         try:
-            values = np.array(transform_func(arr), dtype=float)
+            vals = np.array(transform_func(raw), dtype=float)
         except Exception:
-            values = np.vectorize(transform_func)(arr)
+            vals = np.vectorize(transform_func)(raw).astype(float)
     else:
-        values = arr
+        vals = raw.copy()
 
-    min_val = np.min(values)
-    max_val = np.max(values)
-    if min_val == max_val:
-        sizes = np.full(values.shape, mi)
+    # 3) optional power applied to values (nonlinear scaling)
+    if power != 1:
+        vals = vals ** power
+
+    # 4) normalize based on ORIGINAL raw domain, then clamp to [mi, ma]
+    rmin = float(np.min(raw)) if raw.size else 0.0
+    rmax = float(np.max(raw)) if raw.size else 0.0
+    if rmin == rmax:
+        sizes = np.full(vals.shape, mi, dtype=float)
     else:
-        if power != 1:
-            values = values ** power
-        sizes = np.interp(values, [min_val, max_val], [mi, ma])
+        sizes = np.interp(vals, [rmin, rmax], [mi, ma])
+        # ensure no extrapolation beyond desired bounds
+        sizes = np.clip(sizes, mi, ma)
     
     if mode == 'v':
         size_prop = g.new_vertex_property("float", vals=sizes.tolist())

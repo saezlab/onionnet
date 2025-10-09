@@ -297,7 +297,7 @@ class OnionNetPropertyManager:
         else:
             # ---- VERTEX BRANCH ----
             if encoded_prop_name not in active.vp:
-                raise KeyError(...)
+                raise KeyError(f"Vertex property '{encoded_prop_name}' does not exist.")
             decoded = active.new_vertex_property('string')
 
             if is_view:
@@ -388,14 +388,16 @@ class OnionNetPropertyManager:
             The integer code for that category, or None if not present.
         """
         if dim == 'v':
-            cmap = self.core.vertex_categorical_mappings.get(prop_name, {}).get('str_to_int', {})
+            mapping_entry = self.core.vertex_categorical_mappings.get(prop_name)
         elif dim == 'e':
-            cmap = self.core.edge_categorical_mappings.get(prop_name, {}).get('str_to_int', {})
+            mapping_entry = self.core.edge_categorical_mappings.get(prop_name)
         else:
             raise ValueError("dim must be 'v' or 'e'")
-        
-        if cmap is None:
+
+        if not mapping_entry or 'str_to_int' not in mapping_entry:
             raise KeyError(f"No categorical mapping found for {dim}-prop '{prop_name}'")
+
+        cmap = mapping_entry['str_to_int']
         if category_label not in cmap:
             raise KeyError(f"Label '{category_label}' not seen for prop '{prop_name}'")
-        return cmap[category_label]
+        return int(cmap[category_label])
