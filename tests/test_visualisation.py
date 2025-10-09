@@ -16,6 +16,7 @@ from onionnet.visualisation import (
     color_nodes,
     shape_nodes,
     add_halo_to_node,
+    add_halos_to_nodes,
     set_node_sizes_and_text_by_depth,
     get_legend,
     color_edges,
@@ -382,6 +383,75 @@ def test_prop_to_size_constant_and_edge_mode(edge_graph):
     # invalid mode
     with pytest.raises(ValueError):
         prop_to_size(g, sizes, mode='x')
+
+
+# ---- Additional visualisation tests ----
+
+
+def test_add_halos_to_nodes_on_graph_and_view():
+    g = gt.Graph(directed=False)
+    g.add_vertex(4)
+    vf = g.new_vertex_property('bool'); vf.a = np.array([False, True, True, True])
+    gv = gt.GraphView(g, vfilt=vf)
+    out = add_halos_to_nodes(gv, nodes=[1, 3], colors=[(0,1,0,0.8)])
+    v_halo = out['v_halo']; v_col = out['v_halo_color']
+    assert 'v_halo' in gv.vp and 'v_halo_color' in gv.vp
+    assert v_halo[g.vertex(1)] and v_halo[g.vertex(3)] and not v_halo[g.vertex(2)]
+    assert tuple(v_col[g.vertex(1)]) == (0,1,0,0.8)
+    assert tuple(v_col[g.vertex(3)]) != (0,1,0,0.8)
+    out2 = add_halos_to_nodes(g, nodes=[0,2])
+    assert 'v_halo' in g.vp and out2['v_halo'][g.vertex(0)]
+
+
+def test_get_legend_dict_continuous_and_shapes():
+    dcont = {'min_col': (0,0,0,1), 'max_col': (1,1,1,1), 'min_val': 0.0, 'max_val': 10.0}
+    get_legend(dcont, prop='score', mode='continuous')
+    dshape = {'A': 'circle', 'B': 'triangle', 'C': 'square'}
+    get_legend(dshape, title='Shapes')
+
+
+def test_get_legend_graph_categorical_and_save(tmp_path):
+    g = gt.Graph(directed=False)
+    g.add_vertex(3)
+    cat = g.new_vertex_property('string')
+    for i, v in enumerate(g.vertices()):
+        cat[v] = ['x','y','x'][i]
+    g.vp['grp'] = cat
+    fn = tmp_path/"legend_svg"
+    get_legend(g, prop='grp', mode='categorical', ordered_cats=['y','x'], save_filename=str(fn))
+    assert (tmp_path/"legend_svg.svg").exists()
+
+
+def test_load_or_compute_layout_decoded_keys(tmp_path):
+    g = gt.Graph(directed=False)
+    g.add_vertex(2)
+    ld = g.new_vertex_property('string'); nd = g.new_vertex_property('string')
+    for i, v in enumerate(g.vertices()):
+        ld[v] = ['L','R'][i]; nd[v] = ['A','B'][i]
+    g.vp['layer_decoded'] = ld
+    g.vp['node_id_decoded'] = nd
+    fn = tmp_path/"dec_layout.tsv"
+    pos = load_or_compute_layout(g, str(fn), override=True)
+    assert fn.exists()
+    df = pd.read_csv(fn, sep='\t')
+    assert set(['layer_decoded','node_id_decoded','x','y']).issubset(df.columns)
+    pos2 = load_or_compute_layout(g, str(fn), override=False)
+    for v in g.vertices():
+        assert pytest.approx(pos[v][0]) == pos2[v][0]
+
+
+def test_get_legend_graph_requires_prop_raises():
+    g = gt.Graph()
+    g.add_vertex(1)
+    with pytest.raises(ValueError):
+        get_legend(g)
+
+
+def test_layout_by_layer_missing_prop_raises():
+    g = gt.Graph(directed=False)
+    g.add_vertex(1)
+    with pytest.raises(KeyError):
+        layout_by_layer(g, layer_prop_name='layer_decoded')
 
 
 #### More comprehensive tests for layouts

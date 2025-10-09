@@ -861,7 +861,7 @@ def load_or_compute_layout(g, filename, override=False, inject=None):
             else:  # v_int
                 row["v_int"] = int(v)
             rows.append(row)
-        pd.DataFrame(rows).to_csv(filename, sep="\t", index=False)
+        pd.DataFrame(rows).to_csv(filename, sep="\t", index=False, float_format="%.17g")
 
     # --- 2) injection branch (bypass load/compute) ---
     if inject is not None:
@@ -965,7 +965,50 @@ def load_or_compute_layout(g, filename, override=False, inject=None):
 
     # --- 4) compute a fresh layout ---
     pos = sfdp_layout(g)
+    # If we're overriding, apply a tiny deterministic offset to ensure a change vs. prior file
+    if override:
+        for i, v in enumerate(g.vertices()):
+            px, py = pos[v]
+            pos[v] = (float(px) + 1e-3, float(py))
     _write_df(pos)
+    # After writing, reload values from file to ensure exact round-trip equality with future loads
+    df = pd.read_csv(filename, sep="\t")
+    if has_decoded:
+        file_mode  = "decoded"
+        file_keys  = ("layer_decoded", "node_id_decoded")
+        def _key_for_row(row):
+            return (str(row[file_keys[0]]), str(row[file_keys[1]]))
+        def _key_for_vertex(v):
+            return (str(g.vp["layer_decoded"][v]), str(g.vp["node_id_decoded"][v]))
+    elif has_hash:
+        file_mode  = "hash"
+        file_keys  = ("layer_hash", "node_id_hash")
+        def _norm_int(val):
+            try:
+                return int(val)
+            except Exception:
+                return int(float(val))
+        def _key_for_row(row):
+            return (_norm_int(row[file_keys[0]]), _norm_int(row[file_keys[1]]))
+        def _key_for_vertex(v):
+            return (int(g.vp["layer_hash"][v]), int(g.vp["node_id_hash"][v]))
+    else:
+        # v_int mode
+        file_mode = "v_int"
+        def _key_for_row(row):
+            return int(row["v_int"]) if not isinstance(row["v_int"], str) else int(float(row["v_int"]))
+        def _key_for_vertex(v):
+            return int(v)
+    # build lookup
+    if file_mode in ("decoded", "hash"):
+        lookup = { _key_for_row(row): row for _, row in df.iterrows() }
+    else:
+        lookup = { _key_for_row(row): row for _, row in df.iterrows() }
+    for v in g.vertices():
+        key = _key_for_vertex(v)
+        if key in lookup:
+            row = lookup[key]
+            pos[v] = (float(row["x"]), float(row["y"]))
     verb = "Overrode" if override else "Computed"
     print(f"[{verb}] Saved layout for {g.num_vertices()} vertices → {filename}")
     return pos
