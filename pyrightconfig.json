@@ -1,0 +1,12 @@
+{
+  "include": ["onionnet", "tests"],
+  "exclude": ["**/__pycache__", ".venv", "venv", "build", "dist"],
+  "typeCheckingMode": "basic",
+  "pythonVersion": "3.8",
+  "reportMissingImports": "warning",
+  "reportUnknownVariableType": "warning",
+  "reportUnknownParameterType": "warning",
+  "reportUnknownMemberType": "warning",
+  "reportUnusedImport": "warning",
+  "reportUnusedVariable": "warning"
+}

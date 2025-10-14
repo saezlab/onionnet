@@ -1,0 +1,9 @@
+python:
+  - 3.12
+
+numpy:
+  - 2.0
+
+channel_sources:
+  - conda-forge
+

@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "onionnet"
+version = "1.1.0"
+description = "A package for creating and analysing large mulilayered networks using graph-tool."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { file = "LICENSE" }
+authors = [{ name = "Macabe Daley" }]
+keywords = ["graph-tool", "networks", "multilayer", "analysis"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+]
+dependencies = [
+  "numpy",
+  "pandas",
+  # Python 3.8/3.9 need this for newer typing features
+  "typing-extensions; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+# graph-tool is typically installed via conda; leave as optional
+graph = ["graph-tool"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["onionnet"]
+
+[tool.hatch.build.targets.sdist]
+include = ["onionnet", "README.md", "LICENSE"]
+
+# -------------------------
+# Ruff: formatter + linter
+# -------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+exclude = [".git", ".venv", "venv", "build", "dist", "__pycache__", "docs/_build", "node_modules"]
+
+[tool.ruff.format]
+# Black-compatible formatting via Ruff
+docstring-code-format = true
+quote-style = "double"
+indent-style = "space"
+
+[tool.ruff.lint]
+# Pragmatic starter rules; tighten later
+select = ["E","W","F","I","UP","B","A","C4","RET","SIM"]
+ignore = ["E501"]  # let the formatter handle wrapping
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PT011", "PT012", "RET504"]
+
+# If you still run standalone isort occasionally, keep it consistent with Ruff:
+[tool.isort]
+profile = "black"
+line_length = 100
