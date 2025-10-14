@@ -1,7 +1,8 @@
-from .core import OnionNetGraph
 from graph_tool.all import Graph, GraphView
-import pandas as pd
 import numpy as np
+import pandas as pd
+
+from .core import OnionNetGraph
 
 """
 This module provides export functionality for the OnionNetGraph.
@@ -9,15 +10,15 @@ It defines functions to export graph data (vertices and edges) to various format
 a list of dictionaries, or a dictionary keyed by IDs.
 """
 
-    
+
 def export_info(g, mode="v", prop_names=None, noisy=False, return_type="pandas"):
     """
     Export information from a graph (Graph or GraphView) into a structured format.
-    
+
     This function extracts properties from either vertices or edges based on the specified mode.
     For vertices, it uses the vertex properties (g.vp) and for edges, it uses edge properties (g.ep)
     along with source and target vertex identifiers.
-    
+
     Parameters
     ----------
     g : Graph or GraphView
@@ -33,18 +34,19 @@ def export_info(g, mode="v", prop_names=None, noisy=False, return_type="pandas")
             - "pandas" (default) returns a pandas DataFrame
             - "list" returns a list of dictionaries
             - "dict" returns a dictionary keyed by vertex or edge ID
-    
+
     Returns
     -------
     pandas.DataFrame, list, or dict
         The exported graph information in the requested format.
-    
+
     Raises
     ------
     ValueError
         If the mode is not 'v' or 'e', or if an invalid return_type is specified.
     """
     import pandas as pd
+
     try:
         import numpy as np
     except Exception:
@@ -78,7 +80,7 @@ def export_info(g, mode="v", prop_names=None, noisy=False, return_type="pandas")
         requested = [p for p in prop_names if p not in base_keys]
         unknown = [p for p in requested if p not in prop_dict]
         if unknown:
-            raise ValueError(f"Unknown {'edge' if mode=='e' else 'vertex'} properties: {unknown}")
+            raise ValueError(f"Unknown {'edge' if mode == 'e' else 'vertex'} properties: {unknown}")
         props = requested
 
     rows = []
@@ -117,8 +119,10 @@ def export_info(g, mode="v", prop_names=None, noisy=False, return_type="pandas")
             if mode == "v":
                 print(f"Vertex {row['v_int']}: " + ", ".join(f"{p} = {row[p]}" for p in props))
             else:
-                print(f"Edge {row['e_id']} ({row['source']} -> {row['target']}): " +
-                      ", ".join(f"{p} = {row[p]}" for p in props))
+                print(
+                    f"Edge {row['e_id']} ({row['source']} -> {row['target']}): "
+                    + ", ".join(f"{p} = {row[p]}" for p in props)
+                )
         rows.append(row)
 
     if return_type == "list":

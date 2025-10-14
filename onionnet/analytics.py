@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 from typing import Dict, Iterable, Optional, Tuple, Union
-import numpy as np
-import pandas as pd
 
 from graph_tool.all import Graph, GraphView, graph_draw, sfdp_layout
+import numpy as np
+import pandas as pd
 
 """
 This module provides enables custom analysis of OnionNet graphs. For instance creation of a metagraph to show OnionNet layer relationships.
@@ -66,14 +66,21 @@ def layer_stats(
     elif core is not None and "layer_decoded" in core.graph.vp:
         vals = [core.graph.vp["layer_decoded"][v] for v in core.graph.vertices()]
         nodes_by_layer = (
-            pd.Series(vals).value_counts(dropna=False)
-            .sort_values(ascending=False).to_frame("count")
+            pd.Series(vals)
+            .value_counts(dropna=False)
+            .sort_values(ascending=False)
+            .to_frame("count")
         )
     elif core is not None and "layer_hash" in core.graph.vp and hasattr(core, "layer_code_to_name"):
-        vals = [core.layer_code_to_name.get(int(core.graph.vp["layer_hash"][v])) for v in core.graph.vertices()]
+        vals = [
+            core.layer_code_to_name.get(int(core.graph.vp["layer_hash"][v]))
+            for v in core.graph.vertices()
+        ]
         nodes_by_layer = (
-            pd.Series(vals).value_counts(dropna=False)
-            .sort_values(ascending=False).to_frame("count")
+            pd.Series(vals)
+            .value_counts(dropna=False)
+            .sort_values(ascending=False)
+            .to_frame("count")
         )
     else:
         raise ValueError("Need df_nodes[layer] or vertex layer props on core.graph.")
@@ -87,7 +94,9 @@ def layer_stats(
         if "interlayer" in df_edges:
             interlayer_edge_count = int(df_edges["interlayer"].sum())
         else:
-            interlayer_edge_count = int((df_edges[source_layer_col] != df_edges[target_layer_col]).sum())
+            interlayer_edge_count = int(
+                (df_edges[source_layer_col] != df_edges[target_layer_col]).sum()
+            )
 
         edges_by_pair = (
             df_edges.groupby([source_layer_col, target_layer_col])
@@ -110,7 +119,9 @@ def layer_stats(
 
             ser = pd.Series(list(zip(s, t)))
             edges_by_pair = ser.value_counts().sort_values(ascending=False).to_frame("edges")
-            edges_by_pair.index = pd.MultiIndex.from_tuples(edges_by_pair.index, names=[source_layer_col, target_layer_col])
+            edges_by_pair.index = pd.MultiIndex.from_tuples(
+                edges_by_pair.index, names=[source_layer_col, target_layer_col]
+            )
             interlayer_edge_count = int((pd.Series(s) != pd.Series(t)).sum())
 
     if print_tables:
@@ -123,7 +134,7 @@ def layer_stats(
             display(edges_by_pair)
 
     # deprecated return of interlayer_edge_count
-    return nodes_by_layer, edges_by_pair 
+    return nodes_by_layer, edges_by_pair
 
 
 def plot_layer_metagraph(
@@ -131,37 +142,31 @@ def plot_layer_metagraph(
     nodes_by_layer: Optional[pd.DataFrame] = None,
     *,
     # scaling of geometry
-    node_scaler: str = "log",                 # {'log','linear'}
-    edge_scaler: str = "log",                 # {'log','linear'}
+    node_scaler: str = "log",  # {'log','linear'}
+    edge_scaler: str = "log",  # {'log','linear'}
     node_size_range: Tuple[float, float] = (10, 60),
     edge_width_range: Tuple[float, float] = (0.5, 8.0),
-
     # text sizes
     node_text_size_range: Tuple[float, float] = (10, 16),
     edge_text_size_range: Tuple[float, float] = (8, 14),
-
     # labels
     show_edge_counts: bool = False,
     show_node_counts: bool = False,
     node_label_fmt: str = "{layer}\n(n={count})",
     node_text_position: Union[int, float] = -1,  # -1=center inside; or angle in radians
-
     # pad node labels to same length (first line only)
     pad_label_string: bool = False,
-
     # monospace font toggle + optional explicit font names
     use_monospace_font: bool = False,
     vertex_font: Optional[str] = None,
     edge_font: Optional[str] = None,
-
     # color + layout
-    family_colors: Optional[Dict[str, Tuple[float,float,float,float]]] = None,
+    family_colors: Optional[Dict[str, Tuple[float, float, float, float]]] = None,
     family_extractor: Optional[Callable[[str], str]] = None,
     layout: str = "sfdp",
     show_labels: bool = True,
     output_size: Tuple[int, int] = (900, 700),
     return_graph: bool = False,
-
     # custom positioning (reuse prior layout)
     pos=None,
 ):
@@ -202,14 +207,18 @@ def plot_layer_metagraph(
     -------
     None or (Graph, PropertyMap)
     """
-    import numpy as np
-    from graph_tool.all import Graph, sfdp_layout, graph_draw
+    from graph_tool.all import Graph, graph_draw, sfdp_layout
     import matplotlib.cm as cm
+    import numpy as np
 
     if not isinstance(edges_by_pair, pd.DataFrame) or "edges" not in edges_by_pair.columns:
-        raise ValueError("edges_by_pair must be a DataFrame with an 'edges' column and MultiIndex of (source_layer, target_layer).")
+        raise ValueError(
+            "edges_by_pair must be a DataFrame with an 'edges' column and MultiIndex of (source_layer, target_layer)."
+        )
     if not isinstance(edges_by_pair.index, pd.MultiIndex):
-        raise ValueError("edges_by_pair index must be a MultiIndex of (source_layer, target_layer).")
+        raise ValueError(
+            "edges_by_pair index must be a MultiIndex of (source_layer, target_layer)."
+        )
 
     def _scale(vals: np.ndarray, mode: str, out_range: Tuple[float, float]) -> np.ndarray:
         if vals.size == 0:
@@ -231,8 +240,9 @@ def plot_layer_metagraph(
                 return n.split(sep, 1)[0]
         return n
 
-    layers = sorted(set(edges_by_pair.index.get_level_values(0)) |
-                    set(edges_by_pair.index.get_level_values(1)))
+    layers = sorted(
+        set(edges_by_pair.index.get_level_values(0)) | set(edges_by_pair.index.get_level_values(1))
+    )
 
     mg = Graph(directed=True)
     v_map: Dict[str, int] = {}
@@ -240,7 +250,7 @@ def plot_layer_metagraph(
     v_label = mg.new_vertex_property("string")
     v_family = mg.new_vertex_property("string")
     v_color = mg.new_vertex_property("vector<double>")
-    v_size  = mg.new_vertex_property("double")
+    v_size = mg.new_vertex_property("double")
     v_fsize = mg.new_vertex_property("double")  # node text size
 
     fam_fn = family_extractor or _infer_family_basic
@@ -260,7 +270,7 @@ def plot_layer_metagraph(
     else:
         fams = sorted({v_family[v] for v in mg.vertices()})
         cmap = cm.get_cmap("tab20")
-        fam_to_rgba = {f: tuple(cmap(i / max(1, len(fams)-1))) for i, f in enumerate(fams)}
+        fam_to_rgba = {f: tuple(cmap(i / max(1, len(fams) - 1))) for i, f in enumerate(fams)}
         # unify alpha
         fam_to_rgba = {f: (rgba[0], rgba[1], rgba[2], 0.9) for f, rgba in fam_to_rgba.items()}
         for v in mg.vertices():
@@ -271,37 +281,37 @@ def plot_layer_metagraph(
     if nodes_by_layer is not None and "count" in nodes_by_layer.columns:
         layer_counts = {str(idx): int(val) for idx, val in nodes_by_layer["count"].items()}
         arr = np.array([layer_counts.get(v_label[v], 1) for v in mg.vertices()], dtype=float)
-        sizes  = _scale(arr, node_scaler, node_size_range)
-        fsize  = _scale(arr, node_scaler, node_text_size_range)
+        sizes = _scale(arr, node_scaler, node_size_range)
+        fsize = _scale(arr, node_scaler, node_text_size_range)
     else:
-        arr    = np.ones(mg.num_vertices(), dtype=float)
-        sizes  = np.full_like(arr, np.mean(node_size_range), dtype=float)
-        fsize  = np.full_like(arr, np.mean(node_text_size_range), dtype=float)
+        arr = np.ones(mg.num_vertices(), dtype=float)
+        sizes = np.full_like(arr, np.mean(node_size_range), dtype=float)
+        fsize = np.full_like(arr, np.mean(node_text_size_range), dtype=float)
 
     for vv, s, fs in zip(mg.vertices(), sizes, fsize):
-        v_size[vv]  = float(s)
+        v_size[vv] = float(s)
         v_fsize[vv] = float(fs)
 
     # Edges
     e_weight = mg.new_edge_property("double")
-    e_width  = mg.new_edge_property("double")
-    e_color  = mg.new_edge_property("vector<double>")
-    e_text   = mg.new_edge_property("string")
-    e_fsize  = mg.new_edge_property("double")
+    e_width = mg.new_edge_property("double")
+    e_color = mg.new_edge_property("vector<double>")
+    e_text = mg.new_edge_property("string")
+    e_fsize = mg.new_edge_property("double")
 
     edge_rgba = (0.2, 0.2, 0.2, 0.45)
     pairs = edges_by_pair.sort_values("edges", ascending=False)
     weights = pairs["edges"].astype(float).values
-    widths  = _scale(weights, edge_scaler, edge_width_range)
-    tsize   = _scale(weights, edge_scaler, edge_text_size_range)
+    widths = _scale(weights, edge_scaler, edge_width_range)
+    tsize = _scale(weights, edge_scaler, edge_text_size_range)
 
     for (src, tgt), w, pen, tfs in zip(pairs.index.values, weights, widths, tsize):
         e = mg.add_edge(v_map[str(src)], v_map[str(tgt)])
         e_weight[e] = float(w)
-        e_width[e]  = float(pen)
-        e_color[e]  = edge_rgba
+        e_width[e] = float(pen)
+        e_color[e] = edge_rgba
         if show_edge_counts:
-            e_text[e]  = f"{int(w):,}"  # nice thousands separators
+            e_text[e] = f"{int(w):,}"  # nice thousands separators
             e_fsize[e] = float(tfs)
 
     # Vertex labels (optionally with counts)
@@ -333,8 +343,10 @@ def plot_layer_metagraph(
         pos = sfdp_layout(mg)
 
     # Fonts
-    v_font = vertex_font if vertex_font is not None else ("Monospace" if use_monospace_font else None)
-    e_font = edge_font   if edge_font   is not None else ("Monospace" if use_monospace_font else None)
+    v_font = (
+        vertex_font if vertex_font is not None else ("Monospace" if use_monospace_font else None)
+    )
+    e_font = edge_font if edge_font is not None else ("Monospace" if use_monospace_font else None)
 
     graph_draw(
         mg,

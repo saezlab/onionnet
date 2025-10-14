@@ -22,6 +22,7 @@ def __getattr__(name):
     # Lazy import to avoid requiring heavy optional deps (graph_tool) on import
     if name == "OnionNet":
         from .onionnet import OnionNet as _OnionNet
+
         return _OnionNet
     raise AttributeError(f"module 'onionnet' has no attribute {name!r}")
 

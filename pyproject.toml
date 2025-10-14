@@ -42,18 +42,32 @@ target-version = "py38"
 exclude = [".git", ".venv", "venv", "build", "dist", "__pycache__", "docs/_build", "node_modules"]
 
 [tool.ruff.format]
-# Black-compatible formatting via Ruff
 docstring-code-format = true
 quote-style = "double"
 indent-style = "space"
 
 [tool.ruff.lint]
-# Pragmatic starter rules; tighten later
-select = ["E","W","F","I","UP","B","A","C4","RET","SIM"]
-ignore = ["E501"]  # let the formatter handle wrapping
+# Start small; expand later.
+select = [
+  "E",  # pycodestyle errors
+  "W",  # pycodestyle warnings
+  "F",  # pyflakes (real bugs)
+  "I",  # import sorting (replaces isort)
+  "UP", # safe pyupgrade modernizations
+]
+ignore = ["E501"]  # let the formatter wrap long lines
+
+[tool.ruff.lint.isort]
+known-first-party = ["onionnet"]
+force-sort-within-sections = true
+combine-as-imports = true
+# If you rely on runtime import side-effects in a few modules, we’ll pin them below.
 
 [tool.ruff.lint.per-file-ignores]
+# Tests sometimes need assert/return/fixture quirks; keep your existing ignores
 "tests/**" = ["S101", "PT011", "PT012", "RET504"]
+# Re-exports in __init__ often look unused and import order matters
+"onionnet/**/__init__.py" = ["F401", "I001"]
 
 # If you still run standalone isort occasionally, keep it consistent with Ruff:
 [tool.isort]

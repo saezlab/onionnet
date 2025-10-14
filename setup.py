@@ -10,11 +10,11 @@ setup(
     install_requires=[
         "numpy",
         "pandas",
-        #"graph-tool",  # Note graph-tool is not pip installable, so you should install it via conda before running OnionNet.
+        # "graph-tool",  # Note graph-tool is not pip installable, so you should install it via conda before running OnionNet.
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
         "Operating System :: OS Independent",
     ],
-    python_requires='>=3.8',
+    python_requires=">=3.8",
 )
