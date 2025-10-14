@@ -1,9 +1,8 @@
 # onionnet/analytics.py
 from __future__ import annotations
 
-from typing import Dict, Iterable, Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Union, Callable, TYPE_CHECKING
 
-from graph_tool.all import Graph, GraphView, graph_draw, sfdp_layout
 import numpy as np
 import pandas as pd
 
@@ -30,6 +29,11 @@ def _infer_family_basic(name: str) -> str:
         if sep in n:
             return n.split(sep, 1)[0]
     return n
+
+
+if TYPE_CHECKING:
+    # For static analysis; avoids runtime import cycles
+    from .core import OnionNetGraph
 
 
 def layer_stats(
@@ -207,9 +211,10 @@ def plot_layer_metagraph(
     -------
     None or (Graph, PropertyMap)
     """
-    from graph_tool.all import Graph, graph_draw, sfdp_layout
+    # Local imports so tests can monkeypatch and to avoid heavy deps at import-time
     import matplotlib.cm as cm
     import numpy as np
+    from graph_tool.all import Graph, graph_draw, sfdp_layout
 
     if not isinstance(edges_by_pair, pd.DataFrame) or "edges" not in edges_by_pair.columns:
         raise ValueError(

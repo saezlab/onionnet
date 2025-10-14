@@ -1,11 +1,11 @@
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from graph_tool.all import Graph, GraphView
 import numpy as np
 import pandas as pd
 
 from .core import OnionNetGraph
-from .utils import infer_property_type, map_categorical_property
+from .utils import infer_property_type
 
 """
 This module provides the OnionNetPropertyManager class, which handles property access, conversion, and management for vertices (and edges) in an OnionNetGraph.
@@ -155,7 +155,6 @@ class OnionNetPropertyManager:
         Side Effects:
             If verbose is True, prints the properties to the console.
         """
-        v = self.get_vertex_by_name_tuple(layer_name, node_id_str)
         props = self.view_node_properties(
             self.core.layer_name_to_code[layer_name], self.core.node_id_str_to_int[node_id_str]
         )

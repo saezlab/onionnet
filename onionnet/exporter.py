@@ -1,8 +1,5 @@
-from graph_tool.all import Graph, GraphView
-import numpy as np
 import pandas as pd
 
-from .core import OnionNetGraph
 
 """
 This module provides export functionality for the OnionNetGraph.
@@ -45,7 +42,6 @@ def export_info(g, mode="v", prop_names=None, noisy=False, return_type="pandas")
     ValueError
         If the mode is not 'v' or 'e', or if an invalid return_type is specified.
     """
-    import pandas as pd
 
     try:
         import numpy as np

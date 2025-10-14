@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import List
 import warnings
 
 import numpy as np
@@ -126,7 +126,7 @@ class OnionNetBuilder:
         else:
             # raise if any NA in keys
             if df_n[[node_id_col, node_layer_col]].isna().any().any():
-                raise ValueError(f"NA in node keys but drop_na=False")
+                raise ValueError("NA in node keys but drop_na=False")
             if (
                 df_e[
                     [
@@ -140,7 +140,7 @@ class OnionNetBuilder:
                 .any()
                 .any()
             ):
-                raise ValueError(f"NA in edge keys but drop_na=False")
+                raise ValueError("NA in edge keys but drop_na=False")
             df_n_no_na = df_n
             df_e_no_na = df_e
 
@@ -476,7 +476,7 @@ class OnionNetBuilder:
                 .any()
             ):
                 raise ValueError(
-                    f"Detected NA in edge keys but drop_na=False; "
+                    "Detected NA in edge keys but drop_na=False; "
                     "please set drop_na=True or clean your data first."
                 )
         uniq_subset = [source_id_col, source_layer_col, target_id_col, target_layer_col]

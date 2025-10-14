@@ -1,14 +1,13 @@
-from collections import defaultdict
 from itertools import zip_longest
 
 # For layout compute or load function
 import os
-from typing import Any, Dict, List
+from typing import Any, List
 import warnings
 
 import graph_tool
 import graph_tool.all as gt
-from graph_tool.all import Graph, GraphView, sfdp_layout
+from graph_tool.all import GraphView, sfdp_layout
 import matplotlib.cm as cm  # To use color maps
 from matplotlib.patches import Patch
 import matplotlib.pyplot as plt
@@ -427,7 +426,6 @@ def get_legend(
     """
     import matplotlib.cm as cm
     from matplotlib.lines import Line2D
-    from matplotlib.patches import Patch
     import matplotlib.pyplot as plt
 
     # --- shape helpers ----------------------------------------------------
@@ -512,7 +510,7 @@ def get_legend(
                 handles.append(h)
             plt.figure(figsize=(5, 3))
             plot_title = title if title is not None else (prop.capitalize() if prop else "Legend")
-            leg = plt.legend(handles=handles, title=plot_title, loc="center", frameon=False)
+            plt.legend(handles=handles, title=plot_title, loc="center", frameon=False)
             plt.axis("off")
             if save_filename is not None:
                 plt.savefig(f"{save_filename}.svg", format="svg")

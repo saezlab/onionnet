@@ -1,16 +1,12 @@
-from collections import deque
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Tuple
 
-from graph_tool.all import Graph, GraphView, graph_draw, shortest_distance
-from graph_tool.topology import label_components, label_out_component
-import numpy as np
-import pandas as pd
+from graph_tool.all import Graph
+import importlib.util
 
+# Detect availability of IPython without importing display to avoid unused imports
 try:
-    from IPython.display import display
-
-    IPYTHON_AVAILABLE = True
-except ImportError:
+    IPYTHON_AVAILABLE = importlib.util.find_spec("IPython") is not None
+except Exception:
     IPYTHON_AVAILABLE = False
 
 """
