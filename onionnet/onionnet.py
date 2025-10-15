@@ -1,7 +1,6 @@
-"""
-This module provides the OnionNet class, a high-level interface for managing and interacting with
-an OnionNet graph structure. It integrates building, searching, and property management functionalities,
-allowing users to grow the graph, perform searches, view components, and manage vertex properties.
+"""Expose a high-level OnionNet interface.
+
+Integrate building, searching, and property management functionality in one API.
 """
 
 from __future__ import annotations
@@ -25,7 +24,8 @@ class OnionNet:
     of the graph. It uses an underlying OnionNetGraph along with builder, searcher, and property manager
     components to perform operations on the graph.
 
-    Attributes:
+    Attributes
+    ----------
         core (OnionNetGraph): The core graph object.
         builder (OnionNetBuilder): Component for adding nodes and edges to the graph.
         searcher (OnionNetSearcher): Component for querying and viewing graph subsets.
@@ -37,7 +37,8 @@ class OnionNet:
         """
         Initialize the OnionNet instance.
 
-        Parameters:
+        Parameters
+        ----------
             directed (bool, optional): If True, the underlying graph will be directed. Defaults to True.
         """
         self.core = OnionNetGraph(directed)
@@ -53,7 +54,8 @@ class OnionNet:
 
         Delegates to the builder's grow_onion method. Resets the internal node_map cache after growing the graph.
 
-        Parameters:
+        Parameters
+        ----------
             *args: Positional arguments forwarded to the builder.
             **kwargs: Keyword arguments forwarded to the builder.
         """
@@ -67,7 +69,8 @@ class OnionNet:
 
         Delegates to the searcher's search method.
 
-        Returns:
+        Returns
+        -------
             GraphView: A view of the graph based on the search criteria.
         """
         return self.searcher.search(*args, **kwargs)
@@ -78,7 +81,8 @@ class OnionNet:
 
         Delegates to the searcher's view_layers method.
 
-        Returns:
+        Returns
+        -------
             GraphView: A view of the graph filtered by layers.
         """
         return self.searcher.view_layers(*args, **kwargs)
@@ -89,7 +93,8 @@ class OnionNet:
 
         Delegates to the searcher's view_components method.
 
-        Returns:
+        Returns
+        -------
             GraphView: A view of the graph filtered by connected components.
         """
         return self.searcher.view_components(*args, **kwargs)
@@ -100,7 +105,8 @@ class OnionNet:
 
         Delegates to the searcher's filter_view_by_property method.
 
-        Returns:
+        Returns
+        -------
             GraphView: A view of the graph filtered by the specified property criteria.
         """
         return self.searcher.filter_view_by_property(*args, **kwargs)
@@ -111,7 +117,8 @@ class OnionNet:
 
         Delegates to the searcher's compose_filters method.
 
-        Returns:
+        Returns
+        -------
             GraphView: A view of the graph after applying composed filters.
         """
         return self.searcher.compose_filters(*args, **kwargs)
@@ -122,13 +129,15 @@ class OnionNet:
 
         Delegates to the searcher's create_bipartite_gv method.
 
-        Returns:
+        Returns
+        -------
             GraphView: A bipartite view of the graph.
         """
         return self.searcher.create_bipartite_gv(*args, **kwargs)
 
     def filter_edges_between_categories(self, *args, **kwargs):
-        """
+        """Filter edges by layer source/target labels.
+
         High-level convenience: filter only those edges whose
           source_layer==… AND target_layer==…,
         and then prune isolated vertices.
@@ -201,8 +210,9 @@ class OnionNet:
         self.prop_manager.decode_property_labels_bulk(*args, **kwargs)
 
     def get_category_code(self, *args, **kwargs) -> int:
-        """
-        Look up the integer code for a categorical property value
+        """Look up the integer code for a categorical property value.
+
+        Use this to build GraphView filters without digging into internals.
         so you can build GraphView filters without digging into internals.
         """
         return self.prop_manager.get_category_code(*args, **kwargs)
@@ -215,7 +225,8 @@ class OnionNet:
         This property builds and returns a dictionary that maps a tuple of (layer, node name)
         to the corresponding vertex index in the graph. The mapping is cached internally for efficiency.
 
-        Returns:
+        Returns
+        -------
             Dict[Tuple[str, str], int]: A dictionary mapping (layer, node) to vertex index.
         """
         if self._node_map is None:
@@ -231,7 +242,8 @@ class OnionNet:
         """
         Shortcut to access the underlying graph from the OnionNet instance.
 
-        Returns:
+        Returns
+        -------
             Graph: The core graph contained in the OnionNetGraph.
         """
         return self.core.graph

@@ -1,3 +1,5 @@
+"""Utility helpers for OnionNet (type inference, category mapping)."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -21,10 +23,12 @@ def infer_property_type(value):
 
     For individual sample values, the function checks the type using isinstance and returns the corresponding string.
 
-    Parameters:
+    Parameters
+    ----------
         value: A pandas Series or a single sample value (int, float, bool, or str).
 
-    Returns:
+    Returns
+    -------
         str: A string representing the inferred property type. Possible return values include 'int', 'float', 'bool', 'string', or 'object'.
     """
     # If value is a pandas Series, use its dtype
@@ -58,12 +62,14 @@ def map_categorical_property(prop_name, values, mapping: dict[str, int] | None =
     is assigned a unique integer. If an initial mapping is provided, it will be used as the starting point; otherwise,
     a new mapping is created. The function returns both the array of integer codes and the mapping dictionary.
 
-    Parameters:
+    Parameters
+    ----------
         prop_name (str): The name of the property being mapped (used for reference or debugging).
         values (iterable): An array-like collection of categorical values to map.
         mapping (Dict[str, int], optional): An existing dictionary mapping categorical values to integer codes. Defaults to None.
 
-    Returns:
+    Returns
+    -------
         tuple: A tuple containing:
             - mapped_values (np.ndarray): A NumPy array of integer codes corresponding to each value in 'values'.
             - mapping (Dict[str, int]): The updated dictionary mapping each unique categorical value to its integer code.

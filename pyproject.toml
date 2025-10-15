@@ -67,6 +67,7 @@ extend-select = [
   "PTH",  # pathlib over os.path
   "G",    # logging format (avoid %-style on f-strings, etc.)
   "ERA",  # commented-out code
+  "D",    # pydocstyle via Ruff (docs on public API)
 ]
 ignore = [
   "E501",   # let the formatter wrap long lines
@@ -82,8 +83,8 @@ combine-as-imports = true
 # If you rely on runtime import side-effects in a few modules, we’ll pin them below.
 
 [tool.ruff.lint.per-file-ignores]
-"docs/source/conf.py" = ["E402"]     # path hacks need early imports
-"onionnet/**/__init__.py" = ["F401","I001"]
+"docs/source/conf.py" = ["E402", "D"] # path hacks need early imports
+"onionnet/**/__init__.py" = ["F401","I001", "D"]
 "tests/**" = ["S101","PT011","PT012","RET504", "D", "N", "N802", "N803"]
 
 [tool.ruff.lint.pydocstyle]

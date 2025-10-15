@@ -1,14 +1,14 @@
-# onionnet/analytics.py
+"""Analytics utilities for OnionNet graphs.
+
+Provide layer statistics and a meta-graph plotting helper.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
-
-"""
-This module provides enables custom analysis of OnionNet graphs. For instance creation of a metagraph to show OnionNet layer relationships.
-"""
 
 # Optional: only import if available in your env
 try:
@@ -19,8 +19,8 @@ except Exception:
 
 # --- add this helper (replaces the hard-coded _default_family) ---
 def _infer_family_basic(name: str) -> str:
-    """
-    Infer a coarse 'family' from a layer name, without hard-coding.
+    """Infer a coarse 'family' from a layer name.
+
     Heuristic: take the lowercase prefix before the first separator.
     Separators checked (in order): '_', ':', '/', '-', space.
     """

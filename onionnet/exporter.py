@@ -1,3 +1,5 @@
+"""Export graph data (vertices/edges) into tabular formats."""
+
 from __future__ import annotations
 
 import pandas as pd
@@ -43,7 +45,6 @@ def export_info(g, mode="v", prop_names=None, noisy=False, return_type="pandas")
     ValueError
         If the mode is not 'v' or 'e', or if an invalid return_type is specified.
     """
-
     try:
         import numpy as np
     except Exception:

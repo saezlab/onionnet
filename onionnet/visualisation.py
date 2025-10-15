@@ -1,3 +1,5 @@
+"""Visualization utilities for OnionNet graphs."""
+
 from __future__ import annotations
 
 from itertools import zip_longest
@@ -55,16 +57,16 @@ These tools enable effective visual analysis and presentation of complex network
 
 
 def flatten_properties(nested_properties: list[Any]) -> list[str]:
-    """
-    Utility function to flatten a list of nested properties into a single list.
+    """Flatten a list of nested properties into a single list.
+
     Assumes that properties may be nested within sublists.
 
-    Parameters:
+    Parameters
     ----------
     nested_properties : list
         The list of potentially nested properties to be flattened.
 
-    Returns:
+    Returns
     -------
     List[str]
         A flattened list of properties, with duplicates removed.
@@ -79,17 +81,16 @@ def flatten_properties(nested_properties: list[Any]) -> list[str]:
 
 
 def create_node_labels(g: gt.Graph, property_map: gt.PropertyMap) -> gt.PropertyMap:
-    """
-    Creates a vertex property for node labels from potentially nested properties.
+    """Create a vertex property for node labels from potentially nested properties.
 
-    Parameters:
+    Parameters
     ----------
     g : graph_tool.Graph
         The graph containing the nodes.
     property_map : graph_tool.PropertyMap
         A property map containing the nested properties for each node.
 
-    Returns:
+    Returns
     -------
     vertex_labels : graph_tool.PropertyMap
         A string property map with flattened and unique properties as node labels.
@@ -125,8 +126,8 @@ def color_nodes(
     """
     Assign colors to nodes in a graph.
 
-    Parameters:
-    -------
+    Parameters
+    ----------
     - g (Graph): The graph object where nodes are styled.
     - prop_name (str): The name of the vertex property used to determine colors.
     - method (str):
@@ -140,7 +141,7 @@ def color_nodes(
           zero is centered (i.e. using symmetric bounds [-abs(max_val), abs(max_val)]). Defaults to False.
     - transparency (float): Transparency level for the colors (0.0 to 1.0). Default is 1.0 (fully opaque).
 
-    Returns:
+    Returns
     -------
     - result (dict): A dictionary containing:
         - 'v_color' (PropertyMap): A vertex property map with RGBA color values.
@@ -220,15 +221,15 @@ def shape_nodes(
     """
     Assign shapes to nodes in a graph.
 
-    Parameters:
-    -------
+    Parameters
+    ----------
     - g (Graph): The graph object where nodes are styled.
     - prop_name (str): The name of the vertex property used to determine shapes.
     - shape_method (str or None): If specified, assigns vertex shapes based on a property or method.
     - generate_legend (bool): If True, generates a legend dictionary mapping categories to shapes.
     - custom_shape_dict (dict or None): A user-defined dictionary mapping property values to shapes.
 
-    Returns:
+    Returns
     -------
     - result (dict): A dictionary containing:
         - 'v_shape' (PropertyMap): A vertex property map with shape values.
@@ -278,14 +279,14 @@ def add_halo_to_node(
     """
     Add a halo to a specific node while styling the graph.
 
-    Parameters:
-    -------
+    Parameters
+    ----------
     - g (Graph): The graph object.
     - node (Vertex): The specific vertex requiring a halo.
     - halo_color (tuple): RGBA color for the halo.
     - halo_size_factor (float): Size of the halo relative to the node size.
 
-    Returns:
+    Returns
     -------
     - result (dict): A dictionary containing:
         - 'v_halo' (PropertyMap): Halo property map (only for the specific node).
@@ -382,7 +383,8 @@ def set_node_sizes_and_text_by_depth(
     """
     Set node sizes and text sizes based on their depth in the tree.
 
-    Parameters:
+    Parameters
+    ----------
     - g (Graph): The graph object.
     - root (Vertex): The root vertex from which to calculate depths.
     - max_size (int): Maximum size for inner nodes (closer to the root).
@@ -390,7 +392,8 @@ def set_node_sizes_and_text_by_depth(
     - max_text_size (int): Maximum text size for inner nodes.
     - min_text_size (int): Minimum text size for outer nodes.
 
-    Returns:
+    Returns
+    -------
     - v_size (PropertyMap): A vertex property map with sizes based on depth.
     - v_text_size (PropertyMap): A vertex property map for text sizes based on depth.
     """
@@ -427,7 +430,7 @@ def get_legend(
     save_filename: str | None = None,
 ):
     """
-    Generates a legend for graph coloring or shaping.
+    Generate a legend for graph coloring or shaping.
 
     Parameters
     ----------
@@ -636,8 +639,8 @@ def color_edges(
     """
     Assign colors to edges in a graph.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     g (Graph): The graph object where edges are styled.
     prop_name (str): The name of the edge property used to determine colors.
     method (str):
@@ -650,8 +653,8 @@ def color_edges(
     zero_centred (bool): If True (and method is 'continuous'), adjusts the normalization range so that
         zero is centered. Defaults to False.
 
-    Returns:
-    --------
+    Returns
+    -------
     dict: A dictionary containing:
         - 'e_color' (PropertyMap): An edge property map with RGBA color values.
         - 'legend_edge_color' (dict or None): A dictionary mapping categories to colors if generate_legend is True.
@@ -718,6 +721,7 @@ def color_edges(
 def layout_by_layer(g, layer_prop_name="layer_decoded", spacing=50, epsilon=1e-2):
     """
     Create a 2D layout that places nodes in vertical columns based on their layer.
+
     Vertices in each layer are spaced out by 'spacing' units. If a layer has only one
     vertex, a small random offset (epsilon) is added to avoid a zero spread.
     """
@@ -769,7 +773,8 @@ def bipartite_ordered_layout(
     horizontal_spacing=1.0,
 ):
     """
-    Arrange a bipartite graph so edges are as horizontal as possible:
+    Arrange a bipartite graph so edges are as horizontal as possible.
+
       1) Identify the left set (layer == left_val) and the right set (layer == right_val).
       2) Sort the left set by a given key function (default: vertex id).
       3) Sort each node on the right by the average index of its neighbors on the left.
@@ -800,7 +805,6 @@ def bipartite_ordered_layout(
         A 2D coordinate property map for graph-tool, with x=0 or x=horizontal_spacing for each side
         and y determined by the sorted index times vertical_spacing.
     """
-
     # Separate nodes into left and right sets
     left_nodes = []
     right_nodes = []
@@ -843,7 +847,9 @@ def bipartite_ordered_layout(
 
 def load_or_compute_layout(g, filename, override=False, inject=None):
     """
-    Load or compute a 2D layout for `g`, keyed by either:
+    Load or compute a 2D layout for `g`.
+
+    Keyed by either:
       1) ('layer_decoded','node_id_decoded')   [preferred human-readable]
       2) ('layer_hash','node_id_hash')         [encoded integer hashes]
       3) 'v_int'                               [fallback to vertex index IF neither pair exists]
@@ -1070,8 +1076,8 @@ def prop_to_size(g, prop, mi=1, ma=8, power=1, transform_func=None, mode="v"):
     """
     Scales a property to a specified size range with an optional power transformation and custom vectorized transformation.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     g : graph_tool.Graph
         The graph object.
     prop : array-like or PropertyMap
@@ -1088,8 +1094,8 @@ def prop_to_size(g, prop, mi=1, ma=8, power=1, transform_func=None, mode="v"):
     mode : str, optional
         Specifies whether the property is a vertex property ('v') or an edge property ('e'). Defaults to 'v'.
 
-    Returns:
-    --------
+    Returns
+    -------
     size_prop : graph_tool.PropertyMap
         A property map with the scaled sizes, either a vertex or edge property map based on mode.
     """

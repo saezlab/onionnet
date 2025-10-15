@@ -1,6 +1,6 @@
-"""
-This module provides the OnionNetBuilder class, which is responsible for ingesting node and edge DataFrames into an OnionNetGraph.
-It handles data validation, duplicate removal, and mapping of properties for vertices and edges.
+"""Ingest node and edge DataFrames into an OnionNetGraph.
+
+Provide validation, duplicate removal, and property mapping utilities.
 """
 
 from __future__ import annotations
@@ -32,7 +32,8 @@ class OnionNetBuilder:
     """
     Builder class for ingesting DataFrames into an OnionNetGraph.
 
-    Attributes:
+    Attributes
+    ----------
         core (OnionNetGraph): The core graph object where nodes and edges will be added.
     """
 
@@ -40,7 +41,8 @@ class OnionNetBuilder:
         """
         Initialize the OnionNetBuilder with a core OnionNetGraph instance.
 
-        Parameters:
+        Parameters
+        ----------
             core (OnionNetGraph): The core graph object used for adding vertices and edges.
         """
         self.core = core
@@ -73,7 +75,8 @@ class OnionNetBuilder:
         filters invalid edges, and finally adds vertices and edges to the graph.
         A summary of counts at each step is recorded and can be printed.
 
-        Parameters:
+        Parameters
+        ----------
             df_nodes (pd.DataFrame): DataFrame containing node information.
             df_edges (pd.DataFrame): DataFrame containing edge information.
             node_prop_cols (List[str], optional): List of node property column names. Defaults to None.
@@ -91,7 +94,8 @@ class OnionNetBuilder:
             edge_property_types (dict, optional): Mapping of edge property types. Defaults to None.
             verbose (bool, optional): Prints summary of graph creation. Defaults to True.
 
-        Raises:
+        Raises
+        ------
             ValueError: If required columns are missing in the node or edge DataFrames.
         """
         # first, validate that all required columns exist
@@ -279,7 +283,8 @@ class OnionNetBuilder:
         This method processes the DataFrame to ensure correct data types, handles missing values,
         maps node layers and IDs, and assigns both core and additional properties to the vertices.
 
-        Parameters:
+        Parameters
+        ----------
             df_nodes (pd.DataFrame): DataFrame containing node data.
             id_col (str): Name of the column containing node identifiers.
             layer_col (str): Name of the column containing node layer information.
@@ -451,7 +456,8 @@ class OnionNetBuilder:
         This method processes the DataFrame to ensure correct data types, handles missing values,
         maps source and target node identifiers, and assigns properties to the edges.
 
-        Parameters:
+        Parameters
+        ----------
             df_edges (pd.DataFrame): DataFrame containing edge data.
             source_id_col, source_layer_col, target_id_col, target_layer_col: key columns.
             property_cols (List[str], optional): List of edge property columns.
@@ -635,6 +641,7 @@ class OnionNetBuilder:
             self.core.graph.add_edge_list(edge_arr)
 
     def summary(self) -> str:
+        """Return a one-line summary of ingest statistics."""
         s = self._stats
         return (
             f"Nodes: in={s['nodes_in']}, dropped_na={s['nodes_dropped_na']}, "
