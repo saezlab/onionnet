@@ -153,7 +153,7 @@ def test_shape_nodes_categorical_and_boolean(shape_graph):
     """
     res_cat = shape_nodes(shape_graph, "cat", shape_method="categorical", generate_legend=True)
     leg_cat = res_cat["legend_node_shape"]
-    assert set(leg_cat) == set(shape_graph.vp["cat"][v] for v in shape_graph.vertices())
+    assert set(leg_cat) == {shape_graph.vp["cat"][v] for v in shape_graph.vertices()}
 
     # boolean on an existing bool prop
     pmb = shape_graph.new_vertex_property("bool")
@@ -480,7 +480,7 @@ def test_load_or_compute_layout_decoded_keys(tmp_path):
     pos = load_or_compute_layout(g, str(fn), override=True)
     assert fn.exists()
     df = pd.read_csv(fn, sep="\t")
-    assert set(["layer_decoded", "node_id_decoded", "x", "y"]).issubset(df.columns)
+    assert {"layer_decoded", "node_id_decoded", "x", "y"}.issubset(df.columns)
     pos2 = load_or_compute_layout(g, str(fn), override=False)
     for v in g.vertices():
         assert pytest.approx(pos[v][0]) == pos2[v][0]

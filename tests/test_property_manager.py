@@ -1086,11 +1086,16 @@ def test_edge_deduplication_with_and_without_props_considered(builder_and_core):
         drop_na=False,
     )
     # create 10 A->B edges with property 'p' varying
-    edge_rows = []
-    for i in range(10):
-        edge_rows.append(
-            {"source_id": "A", "source_layer": "0", "target_id": "B", "target_layer": "0", "p": i}
-        )
+    edge_rows = [
+        {
+            "source_id": "A",
+            "source_layer": "0",
+            "target_id": "B",
+            "target_layer": "0",
+            "p": i,
+        }
+        for i in range(10)
+    ]
     df = pd.DataFrame(edge_rows)
     # with props considered: expect 10 edges
     bldr.add_edges_from_dataframe(

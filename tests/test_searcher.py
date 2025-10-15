@@ -517,7 +517,7 @@ def test_filter_edges_between_categories_basic(builder_and_core):
     assert result_edges == {(0, 1), (2, 1)}
 
     # Endpoints A, B, C should survive; no other vertices
-    assert set(int(v) for v in gv.vertices()) == {0, 1, 2}
+    assert {int(v) for v in gv.vertices()} == {0, 1, 2}
 
 
 def test_filter_edges_between_categories_unknown_label_raises(builder_and_core):
@@ -636,8 +636,8 @@ def test_filter_edges_prunes_isolated(builder_and_core):
     # keep only the A→B edge
     gv = s.filter_edges(lambda e: int(e.target()) == 1, return_view=True)
     # B and A survive, but C (vertex 2) should have been pruned
-    assert set(int(v) for v in gv.vertices()) == {0, 1}
-    assert set((int(e.source()), int(e.target())) for e in gv.edges()) == {(0, 1)}
+    assert {int(v) for v in gv.vertices()} == {0, 1}
+    assert {(int(e.source()), int(e.target())) for e in gv.edges()} == {(0, 1)}
 
 
 def test_filter_edges_no_matches_yields_empty(builder_and_core):
@@ -803,7 +803,7 @@ def test_create_bipartite_prune_isolated(builder_and_core):
     gv = s.create_bipartite_gv("L1", "L2", "layer_decoded")
     # only A→B should survive, C and the self‐edge on A→A pruned
     assert gv.num_edges() == 1
-    assert set(int(v) for v in gv.vertices()) == {0, 1}
+    assert {int(v) for v in gv.vertices()} == {0, 1}
 
 
 def test_filter_edges_between_categories_modes(builder_and_core):

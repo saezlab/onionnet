@@ -591,9 +591,9 @@ def get_legend(
     elif mode == "categorical":
         # Build a categorical COLOR legend from graph data
         if hasattr(source, "vp") and prop in source.vp:
-            categories = list({x for x in source.vp[prop]})
+            categories = list(set(source.vp[prop]))
         elif hasattr(source, "ep") and prop in source.ep:
-            categories = list({x for x in source.ep[prop]})
+            categories = list(set(source.ep[prop]))
         else:
             raise ValueError("Provided graph does not have the specified property.")
 
@@ -816,10 +816,7 @@ def bipartite_ordered_layout(
 
     # For each node on the right, compute the average index of its neighbors on the left
     def avg_left_index(v):
-        indices = []
-        for w in v.all_neighbors():
-            if w in left_index:
-                indices.append(left_index[w])
+        indices = [left_index[w] for w in v.all_neighbors() if w in left_index]
         if indices:
             return sum(indices) / len(indices)
         else:

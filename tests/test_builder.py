@@ -841,7 +841,7 @@ def test_grow_onion_idempotent(builder_and_core, toy_nodes, toy_edges):
     assert core.graph.num_vertices() == before_nodes * 2
     assert core.graph.num_edges() == before_edges * 2
     # original mapping intact
-    for (_lay, _nid), idx in core.custom_id_to_vertex_index.items():
+    for idx in core.custom_id_to_vertex_index.values():
         assert isinstance(idx, int)
 
 
