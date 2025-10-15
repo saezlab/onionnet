@@ -71,8 +71,3 @@ combine-as-imports = true
 "docs/source/conf.py" = ["E402"]     # path hacks need early imports
 "onionnet/**/__init__.py" = ["F401","I001"]
 "tests/**" = ["S101","PT011","PT012","RET504"]
-
-# If you still run standalone isort occasionally, keep it consistent with Ruff:
-[tool.isort]
-profile = "black"
-line_length = 100

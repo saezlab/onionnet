@@ -1,17 +1,20 @@
+"""
+This module provides the OnionNet class, a high-level interface for managing and interacting with
+an OnionNet graph structure. It integrates building, searching, and property management functionalities,
+allowing users to grow the graph, perform searches, view components, and manage vertex properties.
+"""
+
 from __future__ import annotations
 
-from graph_tool.all import GraphView
+from typing import TYPE_CHECKING
 
 from .builder import OnionNetBuilder
 from .core import OnionNetGraph
 from .property_manager import OnionNetPropertyManager
 from .searcher import OnionNetSearcher
 
-"""
-This module provides the OnionNet class, a high-level interface for managing and interacting with
-an OnionNet graph structure. It integrates building, searching, and property management functionalities,
-allowing users to grow the graph, perform searches, view components, and manage vertex properties.
-"""
+if TYPE_CHECKING:
+    from graph_tool.all import GraphView
 
 
 class OnionNet:

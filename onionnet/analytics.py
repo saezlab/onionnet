@@ -1,7 +1,6 @@
 # onionnet/analytics.py
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -34,6 +33,8 @@ def _infer_family_basic(name: str) -> str:
 
 if TYPE_CHECKING:
     # For static analysis; avoids runtime import cycles
+    from collections.abc import Callable
+
     from .core import OnionNetGraph
 
 

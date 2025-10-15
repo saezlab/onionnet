@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from graph_tool.all import Graph, GraphView
 import numpy as np
-import pandas as pd
 
-from .core import OnionNetGraph
+if TYPE_CHECKING:
+    import pandas as pd
+
+    from .core import OnionNetGraph
 from .utils import infer_property_type
 
 """
@@ -126,7 +128,7 @@ class OnionNetPropertyManager:
             print("Vertex not found.")
             return {}
         props = {}
-        for p in self.core.graph.vp.keys():
+        for p in self.core.graph.vp:
             val = self.core.graph.vp[p][v]
             if p in self.core.vertex_categorical_mappings:
                 mapping = self.core.vertex_categorical_mappings[p]["int_to_str"]

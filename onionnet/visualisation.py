@@ -532,10 +532,7 @@ def get_legend(
                 continue
             col = legend_dict[cat]
             # If tuple/list with alpha, drop alpha for the patch facecolor
-            if isinstance(col, tuple | list) and len(col) >= 3:
-                face = col[:3]
-            else:
-                face = col
+            face = col[:3] if isinstance(col, tuple | list) and len(col) >= 3 else col
             legend_elements.append(Patch(facecolor=face, edgecolor="none", label=str(cat)))
 
         plt.figure(figsize=(5, 3))

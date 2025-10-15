@@ -2,7 +2,7 @@
   "include": ["onionnet", "tests"],
   "exclude": ["**/__pycache__", ".venv", "venv", "build", "dist"],
   "typeCheckingMode": "basic",
-  "pythonVersion": "3.8",
+  "pythonVersion": "3.10",
   "reportMissingImports": "warning",
   "reportUnknownVariableType": "warning",
   "reportUnknownParameterType": "warning",

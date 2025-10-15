@@ -80,7 +80,7 @@ def export_info(g, mode="v", prop_names=None, noisy=False, return_type="pandas")
 
     # Decide which props to export (never include built-ins)
     if prop_names is None:
-        props = [p for p in prop_dict.keys() if p not in base_keys]
+        props = [p for p in prop_dict if p not in base_keys]
     else:
         requested = [p for p in prop_names if p not in base_keys]
         unknown = [p for p in requested if p not in prop_dict]

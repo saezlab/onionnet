@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from graph_tool.all import Graph, GraphView, PropertyMap, graph_draw, shortest_distance
 from graph_tool.topology import label_components
 import numpy as np
 
-from .core import OnionNetGraph
 from .property_manager import OnionNetPropertyManager
 
 """
@@ -708,3 +706,9 @@ class OnionNetSearcher:
         if prop_name != "layer_decoded":
             raise KeyError("prop_name is ignored now; only 'layer_decoded' was ever supported.")
         return self.filter_edges_between_categories(layer1, layer2, mode="both")
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from .core import OnionNetGraph

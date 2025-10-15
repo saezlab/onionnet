@@ -1,17 +1,21 @@
-from __future__ import annotations
-
-import warnings
-
-import numpy as np
-import pandas as pd
-
-from .core import OnionNetGraph
-from .utils import infer_property_type, map_categorical_property
-
 """
 This module provides the OnionNetBuilder class, which is responsible for ingesting node and edge DataFrames into an OnionNetGraph.
 It handles data validation, duplicate removal, and mapping of properties for vertices and edges.
 """
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+import warnings
+
+import numpy as np
+
+from .utils import infer_property_type, map_categorical_property
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+    from .core import OnionNetGraph
 
 try:
     from IPython.display import display
