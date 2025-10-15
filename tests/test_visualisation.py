@@ -361,10 +361,12 @@ def test_load_or_compute_layout_inject_and_load(tmp_path):
     g = core.graph
 
     fn = tmp_path / "layout.tsv"
+
     # inject: give constant layout
     def inject(G):
         (G.new_vertex_property("vector<double>"), None)
         return {v: [1.0, 2.0] for v in G.vertices()}
+
     # actually need a propmap: let's compute real SFDP
     pos1 = load_or_compute_layout(
         g,

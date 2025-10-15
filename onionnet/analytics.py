@@ -1,7 +1,8 @@
 # onionnet/analytics.py
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Dict, Optional, Tuple, Union
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -37,15 +38,15 @@ if TYPE_CHECKING:
 
 
 def layer_stats(
-    df_nodes: Optional[pd.DataFrame] = None,
-    df_edges: Optional[pd.DataFrame] = None,
+    df_nodes: pd.DataFrame | None = None,
+    df_edges: pd.DataFrame | None = None,
     *,
-    core: Optional[OnionNetGraph] = None,
+    core: OnionNetGraph | None = None,
     node_layer_col: str = "layer",
     source_layer_col: str = "source_layer",
     target_layer_col: str = "target_layer",
     print_tables: bool = True,
-) -> Tuple[pd.DataFrame, Optional[int], Optional[pd.DataFrame]]:
+) -> tuple[pd.DataFrame, pd.DataFrame | None]:
     """
     Compute quick layer summaries.
 
@@ -116,12 +117,12 @@ def layer_stats(
             s = [g.ep["source_layer"][e] for e in g.edges()]
             t = [g.ep["target_layer"][e] for e in g.edges()]
             # decode if necessary
-            if isinstance(s[0], (int, np.integer)):
+            if isinstance(s[0], int | np.integer):
                 s = [core.layer_code_to_name.get(int(x)) for x in s]
-            if isinstance(t[0], (int, np.integer)):
+            if isinstance(t[0], int | np.integer):
                 t = [core.layer_code_to_name.get(int(x)) for x in t]
 
-            ser = pd.Series(list(zip(s, t)))
+            ser = pd.Series(list(zip(s, t, strict=False)))
             edges_by_pair = ser.value_counts().sort_values(ascending=False).to_frame("edges")
             edges_by_pair.index = pd.MultiIndex.from_tuples(
                 edges_by_pair.index, names=[source_layer_col, target_layer_col]
@@ -143,33 +144,33 @@ def layer_stats(
 
 def plot_layer_metagraph(
     edges_by_pair: pd.DataFrame,
-    nodes_by_layer: Optional[pd.DataFrame] = None,
+    nodes_by_layer: pd.DataFrame | None = None,
     *,
     # scaling of geometry
     node_scaler: str = "log",  # {'log','linear'}
     edge_scaler: str = "log",  # {'log','linear'}
-    node_size_range: Tuple[float, float] = (10, 60),
-    edge_width_range: Tuple[float, float] = (0.5, 8.0),
+    node_size_range: tuple[float, float] = (10, 60),
+    edge_width_range: tuple[float, float] = (0.5, 8.0),
     # text sizes
-    node_text_size_range: Tuple[float, float] = (10, 16),
-    edge_text_size_range: Tuple[float, float] = (8, 14),
+    node_text_size_range: tuple[float, float] = (10, 16),
+    edge_text_size_range: tuple[float, float] = (8, 14),
     # labels
     show_edge_counts: bool = False,
     show_node_counts: bool = False,
     node_label_fmt: str = "{layer}\n(n={count})",
-    node_text_position: Union[int, float] = -1,  # -1=center inside; or angle in radians
+    node_text_position: int | float = -1,  # -1=center inside; or angle in radians
     # pad node labels to same length (first line only)
     pad_label_string: bool = False,
     # monospace font toggle + optional explicit font names
     use_monospace_font: bool = False,
-    vertex_font: Optional[str] = None,
-    edge_font: Optional[str] = None,
+    vertex_font: str | None = None,
+    edge_font: str | None = None,
     # color + layout
-    family_colors: Optional[Dict[str, Tuple[float, float, float, float]]] = None,
-    family_extractor: Optional[Callable[[str], str]] = None,
+    family_colors: dict[str, tuple[float, float, float, float]] | None = None,
+    family_extractor: Callable[[str], str] | None = None,
     layout: str = "sfdp",
     show_labels: bool = True,
-    output_size: Tuple[int, int] = (900, 700),
+    output_size: tuple[int, int] = (900, 700),
     return_graph: bool = False,
     # custom positioning (reuse prior layout)
     pos=None,
@@ -225,7 +226,7 @@ def plot_layer_metagraph(
             "edges_by_pair index must be a MultiIndex of (source_layer, target_layer)."
         )
 
-    def _scale(vals: np.ndarray, mode: str, out_range: Tuple[float, float]) -> np.ndarray:
+    def _scale(vals: np.ndarray, mode: str, out_range: tuple[float, float]) -> np.ndarray:
         if vals.size == 0:
             return vals
         x = np.asarray(vals, dtype=float)
@@ -250,7 +251,7 @@ def plot_layer_metagraph(
     )
 
     mg = Graph(directed=True)
-    v_map: Dict[str, int] = {}
+    v_map: dict[str, int] = {}
 
     v_label = mg.new_vertex_property("string")
     v_family = mg.new_vertex_property("string")
@@ -282,7 +283,7 @@ def plot_layer_metagraph(
             v_color[v] = fam_to_rgba[v_family[v]]
 
     # Node sizes & text sizes
-    layer_counts: Dict[str, int] = {}
+    layer_counts: dict[str, int] = {}
     if nodes_by_layer is not None and "count" in nodes_by_layer.columns:
         layer_counts = {str(idx): int(val) for idx, val in nodes_by_layer["count"].items()}
         arr = np.array([layer_counts.get(v_label[v], 1) for v in mg.vertices()], dtype=float)
@@ -293,7 +294,7 @@ def plot_layer_metagraph(
         sizes = np.full_like(arr, np.mean(node_size_range), dtype=float)
         fsize = np.full_like(arr, np.mean(node_text_size_range), dtype=float)
 
-    for vv, s, fs in zip(mg.vertices(), sizes, fsize):
+    for vv, s, fs in zip(mg.vertices(), sizes, fsize, strict=False):
         v_size[vv] = float(s)
         v_fsize[vv] = float(fs)
 
@@ -310,7 +311,7 @@ def plot_layer_metagraph(
     widths = _scale(weights, edge_scaler, edge_width_range)
     tsize = _scale(weights, edge_scaler, edge_text_size_range)
 
-    for (src, tgt), w, pen, tfs in zip(pairs.index.values, weights, widths, tsize):
+    for (src, tgt), w, pen, tfs in zip(pairs.index.values, weights, widths, tsize, strict=False):
         e = mg.add_edge(v_map[str(src)], v_map[str(tgt)])
         e_weight[e] = float(w)
         e_width[e] = float(pen)

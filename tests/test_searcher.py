@@ -254,7 +254,7 @@ def test_filter_view_by_property_edge(chain_graph_and_searcher):
     core, searcher = chain_graph_and_searcher
     # attach a numeric 'w' property to the two chain edges
     wmap = core.graph.new_edge_property("int")
-    for e, val in zip(core.graph.edges(), [5, 10]):
+    for e, val in zip(core.graph.edges(), [5, 10], strict=False):
         wmap[e] = val
     core.graph.ep["w"] = wmap
 
@@ -1173,18 +1173,23 @@ def test_compose_filters_and_modes():
     core = make_simple_core()
     s = OnionNetSearcher(core)
     g = core.graph
+
     def f_gt0(v, _g=g):
         return _g.vp["val"][v] > 0
+
     def f_even(v, _g=g):
         return (_g.vp["val"][v] % 2) == 0
+
     gv = s.compose_filters([f_gt0, f_even], mode="and", type="v")
     vals = [g.vp["val"][v] for v in gv.vertices()]
     assert set(map(int, vals)) == {2}
     pm = s.compose_filters([f_gt0, f_even], mode="or", type="v", return_prop=True)
     assert hasattr(pm, "a")
     assert pm.a.sum() >= 1
+
     def e_ge3(e, _g=g):
         return _g.ep["w"][e] >= 3
+
     gv2 = s.compose_filters([e_ge3], type="e")
     assert all(g.ep["w"][e] >= 3 for e in gv2.edges())
     with pytest.raises(ValueError):

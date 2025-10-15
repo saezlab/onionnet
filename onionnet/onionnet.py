@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Dict, Tuple
-
 from graph_tool.all import GraphView
 
 from .builder import OnionNetBuilder
@@ -207,7 +205,7 @@ class OnionNet:
         return self.prop_manager.get_category_code(*args, **kwargs)
 
     @property
-    def node_map(self) -> Dict[Tuple[str, str], int]:
+    def node_map(self) -> dict[tuple[str, str], int]:
         """
         Get a mapping from (layer, node) to vertex index.
 

@@ -4,7 +4,7 @@ from itertools import zip_longest
 
 # For layout compute or load function
 import os
-from typing import Any, List
+from typing import Any
 import warnings
 
 import graph_tool
@@ -27,7 +27,7 @@ These tools enable effective visual analysis and presentation of complex network
 #########################################
 
 
-def flatten_properties(nested_properties: List[Any]) -> List[str]:
+def flatten_properties(nested_properties: list[Any]) -> list[str]:
     """
     Utility function to flatten a list of nested properties into a single list.
     Assumes that properties may be nested within sublists.
@@ -532,7 +532,7 @@ def get_legend(
                 continue
             col = legend_dict[cat]
             # If tuple/list with alpha, drop alpha for the patch facecolor
-            if isinstance(col, (tuple, list)) and len(col) >= 3:
+            if isinstance(col, tuple | list) and len(col) >= 3:
                 face = col[:3]
             else:
                 face = col
@@ -564,7 +564,7 @@ def get_legend(
             sample = next(it, None)
         else:
             raise ValueError("Provided graph does not have the specified property.")
-        mode = "continuous" if isinstance(sample, (int, float)) else "categorical"
+        mode = "continuous" if isinstance(sample, int | float) else "categorical"
 
     if mode == "continuous":
         # Extract numeric values
@@ -606,7 +606,7 @@ def get_legend(
         legend_elements = []
         for cat in cats:
             col = legend_dict[cat]
-            face = col[:3] if isinstance(col, (tuple, list)) and len(col) >= 3 else col
+            face = col[:3] if isinstance(col, tuple | list) and len(col) >= 3 else col
             legend_elements.append(Patch(facecolor=face, edgecolor="none", label=str(cat)))
 
         plt.figure(figsize=(5, 3))
@@ -742,7 +742,7 @@ def layout_by_layer(g, layer_prop_name="layer_decoded", spacing=50, epsilon=1e-2
             y_positions = [
                 i * spacing / (n - 1) + np.random.uniform(-epsilon, epsilon) for i in range(n)
             ]
-        for v, y in zip(vertices, y_positions):
+        for v, y in zip(vertices, y_positions, strict=False):
             pos[v] = [layer_to_x[layer_val], y]
 
     # Check the overall bounding box of pos

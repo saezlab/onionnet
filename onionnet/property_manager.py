@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 from graph_tool.all import Graph, GraphView
 import numpy as np
@@ -106,7 +106,7 @@ class OnionNetPropertyManager:
         else:
             print(f"Vertex ({layer_code}, {node_id_int}) not found.")
 
-    def view_node_properties(self, layer_code: int, node_id_int: int) -> Dict[str, Any]:
+    def view_node_properties(self, layer_code: int, node_id_int: int) -> dict[str, Any]:
         """
         View all properties for a specified vertex.
 
@@ -142,7 +142,7 @@ class OnionNetPropertyManager:
 
     def view_node_properties_by_names(
         self, layer_name: str, node_id_str: str, verbose: bool = False
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         View properties for a vertex using its human-readable layer and node identifier.
 
@@ -194,7 +194,7 @@ class OnionNetPropertyManager:
         encoded_prop_type: str,  # 'v' for vertex, 'e' for edge
         encoded_prop_name: str,
         new_prop_name: str = None,  # Defaults to f"{encoded_prop_name}_decoded"
-        mapping_dict: Dict[int, str] = None,  # Defaults based on core's mappings
+        mapping_dict: dict[int, str] | None = None,  # Defaults based on core's mappings
         default_label: str = "Unknown",
         g: Graph = None,
     ) -> None:
@@ -306,7 +306,7 @@ class OnionNetPropertyManager:
                 table = np.empty(max(int(enc.max()) + 1, 1), dtype=object)
                 table[:] = default_label
                 for k, v in mapping_dict.items():
-                    if isinstance(k, (int, np.integer)) and 0 <= int(k) < table.size:
+                    if isinstance(k, int | np.integer) and 0 <= int(k) < table.size:
                         table[int(k)] = v
                 labels_all = table[enc]
                 for e in active.edges():
@@ -377,7 +377,7 @@ class OnionNetPropertyManager:
 
         cleaned_colnames = [clean_colname(col) for col in df.columns]
 
-        for orig, cleaned in zip(df.columns, cleaned_colnames):
+        for orig, cleaned in zip(df.columns, cleaned_colnames, strict=False):
             if df[orig].dtype == object:
                 self.decode_property_labels(
                     encoded_prop_type=encoded_prop_type,

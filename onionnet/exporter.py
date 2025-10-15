@@ -56,6 +56,7 @@ def export_info(g, mode="v", prop_names=None, noisy=False, return_type="pandas")
         prop_dict = g.vp
         items = g.vertices()
         base_keys = {"v_int"}
+
         def mk_id(v):
             return int(v)
 
@@ -66,6 +67,7 @@ def export_info(g, mode="v", prop_names=None, noisy=False, return_type="pandas")
         items = g.edges()
         base_keys = {"e_id", "source", "target"}
         eid_map = g.edge_index  # works for Graph and GraphView
+
         def mk_id(e, _eid_map=eid_map):
             return int(_eid_map[e])
 
@@ -103,12 +105,12 @@ def export_info(g, mode="v", prop_names=None, noisy=False, return_type="pandas")
                     converted = False
             if not converted:
                 # fallback: generic iterable (but not string/bytes)
-                if isinstance(val, (list, tuple)):
+                if isinstance(val, list | tuple):
                     pass  # already OK
                 else:
                     try:
                         # treat as sequence if it is iterable and not a string-like
-                        if hasattr(val, "__iter__") and not isinstance(val, (str, bytes)):
+                        if hasattr(val, "__iter__") and not isinstance(val, str | bytes):
                             val = list(val)
                     except Exception:
                         pass

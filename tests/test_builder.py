@@ -266,7 +266,7 @@ def test_mixed_type_ids_and_layers_cast_to_str(builder_and_core):
     df = pd.DataFrame({"node_id": [1, 2, 3], "layer": [0, 1, 1]})
     builder.add_vertices_from_dataframe(df, "node_id", "layer", drop_na=False)
     assert core.graph.num_vertices() == 3
-    for raw_id, raw_layer in zip(df.node_id, df.layer):
+    for raw_id, raw_layer in zip(df.node_id, df.layer, strict=False):
         li = core._map_layer(str(raw_layer))
         ni = core._map_node_id(str(raw_id))
         assert (li, ni) in core.custom_id_to_vertex_index

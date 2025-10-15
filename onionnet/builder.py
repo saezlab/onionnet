@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import List
 import warnings
 
 import numpy as np
@@ -47,8 +46,8 @@ class OnionNetBuilder:
         self,
         df_nodes: pd.DataFrame,
         df_edges: pd.DataFrame,
-        node_prop_cols: List[str] = None,
-        edge_prop_cols: List[str] = None,
+        node_prop_cols: list[str] | None = None,
+        edge_prop_cols: list[str] | None = None,
         drop_na: bool = True,
         drop_duplicates: bool = True,
         use_display: bool = False,
@@ -170,7 +169,11 @@ class OnionNetBuilder:
         # 3) Edge→node alignment: drop edges whose endpoints weren’t ingested (by name)
         #    Do NOT mutate the core mapping when validating; use the node df only.
         node_pairs = set(
-            zip(df_n_clean[node_layer_col].astype(str), df_n_clean[node_id_col].astype(str))
+            zip(
+                df_n_clean[node_layer_col].astype(str),
+                df_n_clean[node_id_col].astype(str),
+                strict=False,
+            )
         )
         # include already present vertices in the graph as valid endpoints
         for (li, ni), _vid in list(self.core.custom_id_to_vertex_index.items()):
@@ -257,7 +260,7 @@ class OnionNetBuilder:
         df_nodes: pd.DataFrame,
         id_col: str,
         layer_col: str,
-        property_cols: List[str] = None,
+        property_cols: list[str] | None = None,
         drop_na: bool = True,
         drop_duplicates: bool = True,
         string_override: bool = False,
@@ -307,7 +310,9 @@ class OnionNetBuilder:
             ndup = df.duplicated(subset=[id_col, layer_col]).sum()
             if ndup:
                 warnings.warn(
-                    f"{ndup} duplicate node rows found but drop_duplicates=False", UserWarning, stacklevel=2
+                    f"{ndup} duplicate node rows found but drop_duplicates=False",
+                    UserWarning,
+                    stacklevel=2,
                 )
         # duplicate removal
         if drop_duplicates:
@@ -318,7 +323,7 @@ class OnionNetBuilder:
         # map to ints (without creating duplicates already present)
         df["layer_int"] = df[layer_col].apply(self.core._map_layer)
         df["node_id_int"] = df[id_col].apply(self.core._map_node_id)
-        custom_ids = list(zip(df["layer_int"], df["node_id_int"]))
+        custom_ids = list(zip(df["layer_int"], df["node_id_int"], strict=False))
 
         # Determine which vertices are new vs existing
         existing_map = self.core.custom_id_to_vertex_index
@@ -335,7 +340,7 @@ class OnionNetBuilder:
             self.core.graph.add_vertex(n_new)
             new_idx = [start + i for i in range(n_new)]
             # update mappings only for new vertices
-            for row_pos, v_idx in zip(new_rows_idx, new_idx):
+            for row_pos, v_idx in zip(new_rows_idx, new_idx, strict=False):
                 cid = custom_ids[row_pos]
                 self.core.custom_id_to_vertex_index[cid] = v_idx
                 self.core.vertex_index_to_custom_id[v_idx] = cid
@@ -425,7 +430,7 @@ class OnionNetBuilder:
         source_layer_col: str,
         target_id_col: str,
         target_layer_col: str,
-        property_cols: List[str] = None,
+        property_cols: list[str] | None = None,
         drop_na: bool = True,
         drop_duplicates: bool = True,
         string_override: bool = False,
@@ -492,8 +497,9 @@ class OnionNetBuilder:
             ).sum()
             if ndup:
                 warnings.warn(
-                    f"{ndup} duplicate edge rows found but drop_duplicates=False", UserWarning,
-                    stacklevel=2
+                    f"{ndup} duplicate edge rows found but drop_duplicates=False",
+                    UserWarning,
+                    stacklevel=2,
                 )
         # cast keys
         df[source_id_col] = df[source_id_col].astype(str)
@@ -505,16 +511,19 @@ class OnionNetBuilder:
         df["source_id_int"] = df[source_id_col].apply(self.core._map_node_id)
         df["target_layer_int"] = df[target_layer_col].apply(self.core._map_layer)
         df["target_id_int"] = df[target_id_col].apply(self.core._map_node_id)
-        source_ids = list(zip(df["source_layer_int"], df["source_id_int"]))
-        target_ids = list(zip(df["target_layer_int"], df["target_id_int"]))
+        source_ids = list(zip(df["source_layer_int"], df["source_id_int"], strict=False))
+        target_ids = list(zip(df["target_layer_int"], df["target_id_int"], strict=False))
         src_idx = [self.core.custom_id_to_vertex_index.get(t) for t in source_ids]
         tgt_idx = [self.core.custom_id_to_vertex_index.get(t) for t in target_ids]
         valid = [
-            i for i, (s, t) in enumerate(zip(src_idx, tgt_idx)) if s is not None and t is not None
+            i
+            for i, (s, t) in enumerate(zip(src_idx, tgt_idx, strict=False))
+            if s is not None and t is not None
         ]
         if not valid:
             warnings.warn(
-                "No valid edges to add: all edges reference missing vertices.", UserWarning,
+                "No valid edges to add: all edges reference missing vertices.",
+                UserWarning,
                 stacklevel=2,
             )
             return
@@ -526,7 +535,7 @@ class OnionNetBuilder:
             df_valid = df.iloc[valid]
             seen = set()
             new_valid = []
-            for k, (s, t) in enumerate(zip(src_valid, tgt_valid)):
+            for k, (s, t) in enumerate(zip(src_valid, tgt_valid, strict=False)):
                 if consider_props_in_duplicate and property_cols:
                     key = (s, t) + tuple(df_valid.iloc[k][p] for p in property_cols)
                 else:

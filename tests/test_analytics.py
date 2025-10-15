@@ -121,6 +121,7 @@ def test_plot_layer_metagraph_builds_graph_and_calls_draw(monkeypatch):
 
     # Optionally use our own family extractor + colors to test coloring path
     fam_map = {"a": (1.0, 0.0, 0.0, 0.5), "b": (0.0, 0.0, 1.0, 0.5)}
+
     def fam_fn(s):
         return s.lower()
 

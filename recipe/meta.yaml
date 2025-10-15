@@ -18,7 +18,7 @@ requirements:
     - pip
     - hatchling >=1.18
   run:
-    - python >=3.8
+    - python >=3.10
     - numpy
     - pandas
     - graph-tool

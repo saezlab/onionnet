@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import Any, Callable, List, Union
+from collections.abc import Callable
+from typing import Any
 
 from graph_tool.all import Graph, GraphView, PropertyMap, graph_draw, shortest_distance
 from graph_tool.topology import label_components
@@ -134,7 +135,7 @@ class OnionNetSearcher:
         # 1) coerce any labels / Vertex → int indices
         #    (accepts int/Vertex or (layer_name, node_id_str))
         source_idx = self._coerce_to_idx(source)
-        target_list = targets if isinstance(targets, (list, tuple)) else [targets]
+        target_list = targets if isinstance(targets, list | tuple) else [targets]
         target_indices = [self._coerce_to_idx(t) for t in target_list]
 
         # 2) forward BFS from source
@@ -153,9 +154,9 @@ class OnionNetSearcher:
                 # numpy scalars too
                 import numpy as _np
 
-                if isinstance(d, (_np.integer, int)):
+                if isinstance(d, _np.integer | int):
                     return int(d) < INF_INT
-                if isinstance(d, (_np.floating, float)):
+                if isinstance(d, _np.floating | float):
                     return float(d) < inf_float
             except Exception:
                 pass
@@ -380,8 +381,8 @@ class OnionNetSearcher:
         return result
 
     def view_layers(
-        self, layer_names: Union[List[str], str], return_filter: bool = False, copy_gv: bool = False
-    ) -> Union[GraphView, PropertyMap]:
+        self, layer_names: list[str] | str, return_filter: bool = False, copy_gv: bool = False
+    ) -> GraphView | PropertyMap:
         """
         Generate a GraphView filtered by the specified layer names.
 
@@ -475,15 +476,18 @@ class OnionNetSearcher:
             if prop_name not in self.core.graph.vp:
                 raise ValueError(f"Vertex property '{prop_name}' does not exist.")
             prop = self.core.graph.vp[prop_name]
-            if isinstance(target_value, (list, tuple, set)):
+            if isinstance(target_value, list | tuple | set):
+
                 def filt_func(v, _prop=prop, _target=target_value):
                     return _prop[v] in _target
             else:
                 if comparison not in ops:
                     raise ValueError(f"Invalid comparison operator '{comparison}'.")
                 cmp_op = ops[comparison]
+
                 def filt_func(v, _prop=prop, _cmp=cmp_op, _target=target_value):
                     return _cmp(_prop[v], _target)
+
             gv = GraphView(self.core.graph, vfilt=filt_func)
             if prune_isolated:
                 gv = GraphView(gv, vfilt=lambda v: (v.out_degree() + v.in_degree()) > 0)
@@ -493,15 +497,18 @@ class OnionNetSearcher:
             if prop_name not in self.core.graph.ep:
                 raise ValueError(f"Edge property '{prop_name}' does not exist.")
             prop = self.core.graph.ep[prop_name]
-            if isinstance(target_value, (list, tuple, set)):
+            if isinstance(target_value, list | tuple | set):
+
                 def filt_func(e, _prop=prop, _target=target_value):
                     return _prop[e] in _target
             else:
                 if comparison not in ops:
                     raise ValueError(f"Invalid comparison operator '{comparison}'.")
                 cmp_op = ops[comparison]
+
                 def filt_func(e, _prop=prop, _cmp=cmp_op, _target=target_value):
                     return _cmp(_prop[e], _target)
+
             gv = GraphView(self.core.graph, efilt=filt_func)
             if prune_isolated:
                 # Instead of gv.degree(v), use the sum of out_degree and in_degree.

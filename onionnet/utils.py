@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Dict
-
 import numpy as np
 import pandas as pd
 
@@ -42,19 +40,19 @@ def infer_property_type(value):
             return "string"
 
     # Fallback for single sample values
-    if isinstance(value, (int, np.integer)):
+    if isinstance(value, int | np.integer):
         return "int"
-    elif isinstance(value, (float, np.floating)):
+    elif isinstance(value, float | np.floating):
         return "float"
     elif isinstance(value, str):
         return "string"
-    elif isinstance(value, (bool, np.bool_)):
+    elif isinstance(value, bool | np.bool_):
         return "bool"
     else:
         return "object"
 
 
-def map_categorical_property(prop_name, values, mapping: Dict[str, int] = None):
+def map_categorical_property(prop_name, values, mapping: dict[str, int] | None = None):
     """
     Map categorical property values to unique integer codes.
 

@@ -392,7 +392,7 @@ def test_bulk_column_name_cleaning(pm_and_graph_simple):
     }
     # also create a dummy vp of int codes
     vp = core.graph.new_vertex_property("int")
-    for v, code in zip(core.graph.vertices(), [0, 1, 0]):
+    for v, code in zip(core.graph.vertices(), [0, 1, 0], strict=False):
         vp[v] = code
     core.graph.vp["My Col(1)/Test-Name"] = vp
 

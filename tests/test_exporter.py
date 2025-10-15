@@ -331,7 +331,7 @@ def test_export_edges_property_name_collision_excluded():
     assert set(df.columns) == {"e_id", "source", "target"}
     # And 'source' must remain an int vertex index (0 for A)
     assert df.loc[df.index[0], "source"] == 0
-    assert isinstance(df.loc[df.index[0], "source"], (int,))  # not a string
+    assert isinstance(df.loc[df.index[0], "source"], int)  # not a string
 
 
 def test_export_edges_vector_prop_fallback():
@@ -355,7 +355,7 @@ def test_export_edges_vector_prop_fallback():
     assert df["w"].iloc[0] == 7
     # vector<double> comes back as a list-like; check length and contents
     vec = df["rgba"].iloc[0]
-    assert isinstance(vec, (list, tuple, np.ndarray))
+    assert isinstance(vec, list | tuple | np.ndarray)
     assert len(vec) == 4 and abs(vec[0] - 0.1) < 1e-9
 
 

@@ -12,8 +12,10 @@ except Exception:  # pragma: no cover - fallback if needed
         from importlib_metadata import version as _pkg_version
     except Exception:  # Last resort
         PackageNotFoundError = Exception  # type: ignore
+
         def _pkg_version(name):  # type: ignore
             return "0.0.0"
+
 
 try:
     __version__ = _pkg_version("onionnet")

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
-from typing import Any, Dict, Tuple
+from typing import Any
 
 from graph_tool.all import Graph
 
@@ -30,14 +30,14 @@ class OnionNetGraph:
 
     Attributes:
         graph (Graph): The underlying graph_tool.Graph object.
-        custom_id_to_vertex_index (Dict[Tuple[int, int], int]): Mapping from custom ID tuple (layer, node_id) to vertex index.
-        vertex_index_to_custom_id (Dict[int, Tuple[int, int]]): Reverse mapping from vertex index to custom ID tuple.
-        layer_code_to_name (Dict[int, str]): Mapping from layer code to layer name.
-        layer_name_to_code (Dict[str, int]): Mapping from layer name to layer code.
-        node_id_int_to_str (Dict[int, str]): Mapping from integer node id to its string representation.
-        node_id_str_to_int (Dict[str, int]): Mapping from string node id to its integer representation.
-        vertex_categorical_mappings (Dict[str, Dict[str, Any]]): Mappings for vertex categorical properties.
-        edge_categorical_mappings (Dict[str, Dict[str, Any]]): Mappings for edge categorical properties.
+        custom_id_to_vertex_index (dict[tuple[int, int], int]): Mapping from custom ID tuple (layer, node_id) to vertex index.
+        vertex_index_to_custom_id (dict[int, tuple[int, int]]): Reverse mapping from vertex index to custom ID tuple.
+        layer_code_to_name (dict[int, str]): Mapping from layer code to layer name.
+        layer_name_to_code (dict[str, int]): Mapping from layer name to layer code.
+        node_id_int_to_str (dict[int, str]): Mapping from integer node id to its string representation.
+        node_id_str_to_int (dict[str, int]): Mapping from string node id to its integer representation.
+        vertex_categorical_mappings (dict[str, dict[str, Any]]): Mappings for vertex categorical properties.
+        edge_categorical_mappings (dict[str, dict[str, Any]]): Mappings for edge categorical properties.
     """
 
     def __init__(self, directed: bool = True):
@@ -53,18 +53,18 @@ class OnionNetGraph:
         self.graph = Graph(directed=directed)
 
         # Mapping dictionaries for custom IDs
-        self.custom_id_to_vertex_index: Dict[Tuple[int, int], int] = {}
-        self.vertex_index_to_custom_id: Dict[int, Tuple[int, int]] = {}
+        self.custom_id_to_vertex_index: dict[tuple[int, int], int] = {}
+        self.vertex_index_to_custom_id: dict[int, tuple[int, int]] = {}
 
         # Mappings for layer and node IDs
-        self.layer_code_to_name: Dict[int, str] = {}
-        self.layer_name_to_code: Dict[str, int] = {}
-        self.node_id_int_to_str: Dict[int, str] = {}
-        self.node_id_str_to_int: Dict[str, int] = {}
+        self.layer_code_to_name: dict[int, str] = {}
+        self.layer_name_to_code: dict[str, int] = {}
+        self.node_id_int_to_str: dict[int, str] = {}
+        self.node_id_str_to_int: dict[str, int] = {}
 
         # Mapping for categorical properties
-        self.vertex_categorical_mappings: Dict[str, Dict[str, Any]] = {}
-        self.edge_categorical_mappings: Dict[str, Dict[str, Any]] = {}
+        self.vertex_categorical_mappings: dict[str, dict[str, Any]] = {}
+        self.edge_categorical_mappings: dict[str, dict[str, Any]] = {}
 
         # Initialize core vertex properties for layer and node identifiers
         self.graph.vp["layer_hash"] = self.graph.new_vertex_property("int64_t")

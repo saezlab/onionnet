@@ -7,7 +7,7 @@ name = "onionnet"
 version = "1.1.0"
 description = "A package for creating and analysing large mulilayered networks using graph-tool."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [{ name = "Macabe Daley" }]
 keywords = ["graph-tool", "networks", "multilayer", "analysis"]
@@ -19,8 +19,6 @@ classifiers = [
 dependencies = [
   "numpy",
   "pandas",
-  # Python 3.8/3.9 need this for newer typing features
-  "typing-extensions; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
@@ -38,7 +36,7 @@ include = ["onionnet", "README.md", "LICENSE"]
 # -------------------------
 [tool.ruff]
 line-length = 100
-target-version = "py38"
+target-version = "py310"
 exclude = [".git", ".venv", "venv", "build", "dist", "__pycache__", "docs/_build", "node_modules", "docs/**.ipynb",]
 
 [tool.ruff.format]
