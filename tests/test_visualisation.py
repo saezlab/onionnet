@@ -1,33 +1,29 @@
-import os
-import tempfile
-
-import pytest
-import numpy as np
-import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import pytest
 
 matplotlib.use("Agg")  # <-- switch to headless backend
 import graph_tool.all as gt
-from graph_tool.all import Graph, GraphView, sfdp_layout
+from graph_tool.all import Graph
 
+from onionnet.core import OnionNetGraph
 from onionnet.visualisation import (
-    flatten_properties,
-    create_node_labels,
-    color_nodes,
-    shape_nodes,
     add_halo_to_node,
     add_halos_to_nodes,
-    set_node_sizes_and_text_by_depth,
-    get_legend,
-    color_edges,
-    layout_by_layer,
     bipartite_ordered_layout,
+    color_edges,
+    color_nodes,
+    create_node_labels,
+    flatten_properties,
+    get_legend,
+    layout_by_layer,
     load_or_compute_layout,
     prop_to_size,
+    set_node_sizes_and_text_by_depth,
+    shape_nodes,
 )
-from onionnet.core import OnionNetGraph
-
 
 # --- flatten_properties & create_node_labels --------------------------------
 
@@ -367,9 +363,9 @@ def test_load_or_compute_layout_inject_and_load(tmp_path):
 
     fn = tmp_path / "layout.tsv"
     # inject: give constant layout
-    inject = lambda G: (G.new_vertex_property("vector<double>"), None)[0] and {
-        v: [1.0, 2.0] for v in G.vertices()
-    }
+    def inject(G):
+        (G.new_vertex_property("vector<double>"), None)
+        return {v: [1.0, 2.0] for v in G.vertices()}
     # actually need a propmap: let's compute real SFDP
     pos1 = load_or_compute_layout(
         g,

@@ -1,12 +1,11 @@
-import pytest
-import numpy as np
-from onionnet.core import OnionNetGraph
-from onionnet.builder import OnionNetBuilder
-from onionnet.searcher import OnionNetSearcher
-from graph_tool.all import GraphView, shortest_distance
-import pandas as pd
 import graph_tool.all as gt
+from graph_tool.all import GraphView
+import pandas as pd
+import pytest
 
+from onionnet.builder import OnionNetBuilder
+from onionnet.core import OnionNetGraph
+from onionnet.searcher import OnionNetSearcher
 
 # --- Fixtures --------------------------------------------------------------
 
@@ -525,8 +524,9 @@ def test_filter_edges_between_categories_unknown_label_raises(builder_and_core):
     """
     Asking to filter by a label that doesn't exist in the mapping should KeyError.
     """
-    from onionnet.searcher import OnionNetSearcher
     import pandas as pd
+
+    from onionnet.searcher import OnionNetSearcher
 
     bldr, core = builder_and_core
     # add minimal nodes & one edge
@@ -685,8 +685,9 @@ def test_filter_between_categories_mismatched_props(builder_and_core):
     Even if no edge-level props exist, filtering by two valid layer labels
     should still keep the A@X→B@Y edge.
     """
-    from onionnet.searcher import OnionNetSearcher
     import pandas as pd
+
+    from onionnet.searcher import OnionNetSearcher
 
     bldr, core = builder_and_core
     # minimal two‐node one‐edge
@@ -1173,15 +1174,18 @@ def test_compose_filters_and_modes():
     core = make_simple_core()
     s = OnionNetSearcher(core)
     g = core.graph
-    f_gt0 = lambda v: g.vp["val"][v] > 0
-    f_even = lambda v: (g.vp["val"][v] % 2) == 0
+    def f_gt0(v, _g=g):
+        return _g.vp["val"][v] > 0
+    def f_even(v, _g=g):
+        return (_g.vp["val"][v] % 2) == 0
     gv = s.compose_filters([f_gt0, f_even], mode="and", type="v")
     vals = [g.vp["val"][v] for v in gv.vertices()]
     assert set(map(int, vals)) == {2}
     pm = s.compose_filters([f_gt0, f_even], mode="or", type="v", return_prop=True)
     assert hasattr(pm, "a")
     assert pm.a.sum() >= 1
-    e_ge3 = lambda e: g.ep["w"][e] >= 3
+    def e_ge3(e, _g=g):
+        return _g.ep["w"][e] >= 3
     gv2 = s.compose_filters([e_ge3], type="e")
     assert all(g.ep["w"][e] >= 3 for e in gv2.edges())
     with pytest.raises(ValueError):

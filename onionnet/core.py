@@ -1,7 +1,9 @@
+from __future__ import annotations
+
+import importlib.util
 from typing import Any, Dict, Tuple
 
 from graph_tool.all import Graph
-import importlib.util
 
 # Detect availability of IPython without importing display to avoid unused imports
 try:

@@ -1,6 +1,5 @@
-import pytest
-import pandas as pd
 import graph_tool.all as gt
+import pandas as pd
 
 from onionnet.onionnet import OnionNet
 
@@ -50,7 +49,8 @@ def test_onionnet_wrappers_and_node_map():
 
     # compose_filters and create_bipartite_gv
     g = on.g
-    f_is_L = lambda v: g.vp["layer_hash"][v] == on.core.layer_name_to_code["L"]
+    def f_is_L(v, _g=g, _code=on.core.layer_name_to_code["L"]):
+        return _g.vp["layer_hash"][v] == _code
     cf = on.compose_filters([f_is_L], type="v")
     assert isinstance(cf, gt.GraphView)
     bi = on.create_bipartite_gv("L", "R")

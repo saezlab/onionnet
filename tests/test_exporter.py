@@ -1,13 +1,12 @@
-import pytest
+from graph_tool.all import GraphView
 import numpy as np
 import pandas as pd
-from graph_tool.all import GraphView, shortest_distance
+import pytest
 
-from onionnet.core import OnionNetGraph
 from onionnet.builder import OnionNetBuilder
-from onionnet.searcher import OnionNetSearcher
+from onionnet.core import OnionNetGraph
 from onionnet.exporter import export_info
-
+from onionnet.searcher import OnionNetSearcher
 
 # --- Fixtures --------------------------------------------------------------
 

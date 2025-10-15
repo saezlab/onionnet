@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from itertools import zip_longest
 
 # For layout compute or load function

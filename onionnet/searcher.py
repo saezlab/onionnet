@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections import deque
 from typing import Any, Callable, List, Union
 
@@ -474,12 +476,14 @@ class OnionNetSearcher:
                 raise ValueError(f"Vertex property '{prop_name}' does not exist.")
             prop = self.core.graph.vp[prop_name]
             if isinstance(target_value, (list, tuple, set)):
-                filt_func = lambda v: prop[v] in target_value
+                def filt_func(v, _prop=prop, _target=target_value):
+                    return _prop[v] in _target
             else:
                 if comparison not in ops:
                     raise ValueError(f"Invalid comparison operator '{comparison}'.")
                 cmp_op = ops[comparison]
-                filt_func = lambda v: cmp_op(prop[v], target_value)
+                def filt_func(v, _prop=prop, _cmp=cmp_op, _target=target_value):
+                    return _cmp(_prop[v], _target)
             gv = GraphView(self.core.graph, vfilt=filt_func)
             if prune_isolated:
                 gv = GraphView(gv, vfilt=lambda v: (v.out_degree() + v.in_degree()) > 0)
@@ -490,12 +494,14 @@ class OnionNetSearcher:
                 raise ValueError(f"Edge property '{prop_name}' does not exist.")
             prop = self.core.graph.ep[prop_name]
             if isinstance(target_value, (list, tuple, set)):
-                filt_func = lambda e: prop[e] in target_value
+                def filt_func(e, _prop=prop, _target=target_value):
+                    return _prop[e] in _target
             else:
                 if comparison not in ops:
                     raise ValueError(f"Invalid comparison operator '{comparison}'.")
                 cmp_op = ops[comparison]
-                filt_func = lambda e: cmp_op(prop[e], target_value)
+                def filt_func(e, _prop=prop, _cmp=cmp_op, _target=target_value):
+                    return _cmp(_prop[e], _target)
             gv = GraphView(self.core.graph, efilt=filt_func)
             if prune_isolated:
                 # Instead of gv.degree(v), use the sum of out_degree and in_degree.

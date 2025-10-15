@@ -39,7 +39,7 @@ include = ["onionnet", "README.md", "LICENSE"]
 [tool.ruff]
 line-length = 100
 target-version = "py38"
-exclude = [".git", ".venv", "venv", "build", "dist", "__pycache__", "docs/_build", "node_modules"]
+exclude = [".git", ".venv", "venv", "build", "dist", "__pycache__", "docs/_build", "node_modules", "docs/**.ipynb",]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -47,13 +47,19 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.ruff.lint]
-# Start small; expand later.
 select = [
   "E",  # pycodestyle errors
   "W",  # pycodestyle warnings
   "F",  # pyflakes (real bugs)
   "I",  # import sorting (replaces isort)
   "UP", # safe pyupgrade modernizations
+  "B",     # flake8-bugbear (correctness)
+  "C4",    # comprehensions (readability/speed)
+  "SIM",   # flake8-simplify
+  "PERF",  # perflint (micro perf wins)
+  "RUF",   # ruff-native rules (e.g., RUF100 for stray noqa)
+  "TCH",   # type-checking imports hygiene (TYPE_CHECKING blocks)
+  "FA",    # future-annotations (FA102 ensures it's at top)
 ]
 ignore = ["E501"]  # let the formatter wrap long lines
 
@@ -64,10 +70,9 @@ combine-as-imports = true
 # If you rely on runtime import side-effects in a few modules, we’ll pin them below.
 
 [tool.ruff.lint.per-file-ignores]
-# Tests sometimes need assert/return/fixture quirks; keep your existing ignores
-"tests/**" = ["S101", "PT011", "PT012", "RET504"]
-# Re-exports in __init__ often look unused and import order matters
-"onionnet/**/__init__.py" = ["F401", "I001"]
+"docs/source/conf.py" = ["E402"]     # path hacks need early imports
+"onionnet/**/__init__.py" = ["F401","I001"]
+"tests/**" = ["S101","PT011","PT012","RET504"]
 
 # If you still run standalone isort occasionally, keep it consistent with Ruff:
 [tool.isort]

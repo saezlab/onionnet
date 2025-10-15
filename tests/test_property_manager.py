@@ -1,11 +1,10 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 import pytest
 
 from onionnet.builder import OnionNetBuilder
 from onionnet.core import OnionNetGraph
 from onionnet.property_manager import OnionNetPropertyManager
-
 
 # --- Fixtures for vertex access/manipulation tests --------------------
 

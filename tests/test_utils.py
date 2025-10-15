@@ -1,6 +1,5 @@
-import pytest
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from onionnet.utils import infer_property_type, map_categorical_property
 

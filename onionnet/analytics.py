@@ -1,7 +1,7 @@
 # onionnet/analytics.py
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple, Union, Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Dict, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -40,7 +40,7 @@ def layer_stats(
     df_nodes: Optional[pd.DataFrame] = None,
     df_edges: Optional[pd.DataFrame] = None,
     *,
-    core: Optional["OnionNetGraph"] = None,
+    core: Optional[OnionNetGraph] = None,
     node_layer_col: str = "layer",
     source_layer_col: str = "source_layer",
     target_layer_col: str = "target_layer",
@@ -212,9 +212,9 @@ def plot_layer_metagraph(
     None or (Graph, PropertyMap)
     """
     # Local imports so tests can monkeypatch and to avoid heavy deps at import-time
+    from graph_tool.all import Graph, graph_draw, sfdp_layout
     import matplotlib.cm as cm
     import numpy as np
-    from graph_tool.all import Graph, graph_draw, sfdp_layout
 
     if not isinstance(edges_by_pair, pd.DataFrame) or "edges" not in edges_by_pair.columns:
         raise ValueError(

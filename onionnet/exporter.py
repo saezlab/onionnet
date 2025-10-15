@@ -1,5 +1,6 @@
-import pandas as pd
+from __future__ import annotations
 
+import pandas as pd
 
 """
 This module provides export functionality for the OnionNetGraph.
@@ -55,19 +56,25 @@ def export_info(g, mode="v", prop_names=None, noisy=False, return_type="pandas")
         prop_dict = g.vp
         items = g.vertices()
         base_keys = {"v_int"}
-        mk_id = lambda v: int(v)
-        base_builder = lambda it: {"v_int": mk_id(it)}
+        def mk_id(v):
+            return int(v)
+
+        def base_builder(it):
+            return {"v_int": mk_id(it)}
     else:
         prop_dict = g.ep
         items = g.edges()
         base_keys = {"e_id", "source", "target"}
         eid_map = g.edge_index  # works for Graph and GraphView
-        mk_id = lambda e: int(eid_map[e])
-        base_builder = lambda it: {
-            "e_id": mk_id(it),
-            "source": int(it.source()),
-            "target": int(it.target()),
-        }
+        def mk_id(e, _eid_map=eid_map):
+            return int(_eid_map[e])
+
+        def base_builder(it):
+            return {
+                "e_id": mk_id(it),
+                "source": int(it.source()),
+                "target": int(it.target()),
+            }
 
     # Decide which props to export (never include built-ins)
     if prop_names is None:

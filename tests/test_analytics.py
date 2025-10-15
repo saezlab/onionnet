@@ -1,11 +1,9 @@
-import pytest
 import pandas as pd
-import numpy as np
-import graph_tool
+import pytest
 
 from onionnet.analytics import layer_stats, plot_layer_metagraph
-from onionnet.core import OnionNetGraph
 from onionnet.builder import OnionNetBuilder
+from onionnet.core import OnionNetGraph
 
 
 def test_layer_stats_with_dataframes_and_interlayer():
@@ -123,7 +121,8 @@ def test_plot_layer_metagraph_builds_graph_and_calls_draw(monkeypatch):
 
     # Optionally use our own family extractor + colors to test coloring path
     fam_map = {"a": (1.0, 0.0, 0.0, 0.5), "b": (0.0, 0.0, 1.0, 0.5)}
-    fam_fn = lambda s: s.lower()
+    def fam_fn(s):
+        return s.lower()
 
     res = plot_layer_metagraph(
         pairs,

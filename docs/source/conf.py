@@ -67,7 +67,8 @@ except NameError:
     master_doc = "index"
 
 # If your package lives alongside docs/, make sure Sphinx can import it:
-import os, sys
+import os
+import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join("..", "..")))
 
