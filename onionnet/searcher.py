@@ -9,6 +9,8 @@ import numpy as np
 
 from .property_manager import OnionNetPropertyManager
 
+INF_INT = 2_147_483_647  # graph-tool sentinel for unreachable on int distances
+
 """
 This module defines the OnionNetSearcher class, which provides functionality for graph traversal and subgraph extraction
 within an OnionNetGraph. It includes methods for computing shortest path related properties, performing breadth-first search
@@ -112,7 +114,7 @@ class OnionNetSearcher:
         Complexity
         ----------
         O((V + E) + T * (V + E)) in the worst case, where T = number of targets.
-        With a single target, it’s ~two BFS passes → O(V + E).
+        With a single target, it's ~two BFS passes → O(V + E).
 
         Examples
         --------
@@ -145,7 +147,6 @@ class OnionNetSearcher:
         )
 
         inf_float = float("inf")
-        INF_INT = 2_147_483_647  # graph-tool sentinel for unreachable on int distances
 
         def _is_reachable(d):
             try:
@@ -173,7 +174,9 @@ class OnionNetSearcher:
 
             if len(target_indices) == 1:
                 reverse_dist = shortest_distance(
-                    g_rev, source=g_rev.vertex(target_indices[0]), directed=True
+                    g_rev,
+                    source=g_rev.vertex(target_indices[0]),
+                    directed=True,
                 )
             else:
                 # Combine per-target reverse-BFS by elementwise min
@@ -188,7 +191,9 @@ class OnionNetSearcher:
             #   No reverse view needed. Just run BFS from each target with directed=False.
             if len(target_indices) == 1:
                 reverse_dist = shortest_distance(
-                    g, source=g.vertex(target_indices[0]), directed=False
+                    g,
+                    source=g.vertex(target_indices[0]),
+                    directed=False,
                 )
             else:
                 und_min = g.new_vertex_property("double")
@@ -313,7 +318,7 @@ class OnionNetSearcher:
         if direction == "any":
             # create an undirected view of g
             g_und = GraphView(g, directed=False)
-            # compute shortest‐path distances on undirected graph
+            # compute shortest-path distances on undirected graph
             distances = shortest_distance(g_und, source=start_vertex, max_dist=max_dist)
             final = {v for v in g_und.vertices() if distances[v] <= max_dist}
             if verbosity:
@@ -323,7 +328,7 @@ class OnionNetSearcher:
             final_indices = {int(v) for v in final}
             result = GraphView(g, vfilt=lambda v: int(v) in final_indices)
             print(
-                f"Filtered graph contains {result.num_vertices()} vertices and {result.num_edges()} edges."
+                f"Filtered graph contains {result.num_vertices()} vertices and {result.num_edges()} edges.",
             )
             if show_plot:
                 if node_text_prop in g.vp:
@@ -366,7 +371,7 @@ class OnionNetSearcher:
         final_indices = {int(v) for v in final}
         result = GraphView(g, vfilt=lambda v: int(v) in final_indices)
         print(
-            f"Filtered graph contains {result.num_vertices()} vertices and {result.num_edges()} edges."
+            f"Filtered graph contains {result.num_vertices()} vertices and {result.num_edges()} edges.",
         )
         if show_plot:
             if node_text_prop in g.vp:
@@ -379,7 +384,10 @@ class OnionNetSearcher:
         return result
 
     def view_layers(
-        self, layer_names: list[str] | str, return_filter: bool = False, copy_gv: bool = False
+        self,
+        layer_names: list[str] | str,
+        return_filter: bool = False,
+        copy_gv: bool = False,
     ) -> GraphView | PropertyMap:
         """
         Generate a GraphView filtered by the specified layer names.
@@ -409,14 +417,15 @@ class OnionNetSearcher:
 
         if return_filter:
             return vfilt
-        else:
-            if copy_gv:
-                return Graph(GraphView(self.core.graph, vfilt=vfilt))
-            else:
-                return GraphView(self.core.graph, vfilt=vfilt)
+        if copy_gv:
+            return Graph(GraphView(self.core.graph, vfilt=vfilt))
+        return GraphView(self.core.graph, vfilt=vfilt)
 
     def view_components(
-        self, size_threshold: int, connectivity: str = "strong", g: Graph = None
+        self,
+        size_threshold: int,
+        connectivity: str = "strong",
+        g: Graph = None,
     ) -> GraphView:
         """
         Create a GraphView that shows connected components of the graph with a minimum size.
@@ -491,7 +500,7 @@ class OnionNetSearcher:
                 gv = GraphView(gv, vfilt=lambda v: (v.out_degree() + v.in_degree()) > 0)
             return gv
 
-        elif dim == "e":
+        if dim == "e":
             if prop_name not in self.core.graph.ep:
                 raise ValueError(f"Edge property '{prop_name}' does not exist.")
             prop = self.core.graph.ep[prop_name]
@@ -513,11 +522,15 @@ class OnionNetSearcher:
                 gv = GraphView(gv, vfilt=lambda v: (v.out_degree() + v.in_degree()) > 0)
             return gv
 
-        else:
-            raise ValueError("Dimension must be 'v' (vertex) or 'e' (edge).")
+        raise ValueError("Dimension must be 'v' (vertex) or 'e' (edge).")
 
     def compose_filters(
-        self, filter_funcs, mode="and", type="v", return_prop: bool = False, g: Graph = None
+        self,
+        filter_funcs,
+        mode="and",
+        type="v",
+        return_prop: bool = False,
+        g: Graph = None,
     ):
         """
         Create a composite filter from a list of individual filter functions.
@@ -540,10 +553,9 @@ class OnionNetSearcher:
         def composite(item):
             if mode == "and":
                 return all(f(item) for f in filter_funcs)
-            elif mode == "or":
+            if mode == "or":
                 return any(f(item) for f in filter_funcs)
-            else:
-                raise ValueError("mode must be 'and' or 'or'")
+            raise ValueError("mode must be 'and' or 'or'")
 
         if return_prop:
             if type == "v":
@@ -551,21 +563,18 @@ class OnionNetSearcher:
                 for v in g.vertices():
                     new_prop[v] = composite(v)
                 return new_prop
-            elif type == "e":
+            if type == "e":
                 new_prop = g.new_edge_property("bool")
                 for e in g.edges():
                     new_prop[e] = composite(e)
                 return new_prop
-            else:
-                raise ValueError("must specify either 'v' or 'e' as type")
-        else:
-            # Return a GraphView using the composite filter.
-            if type == "v":
-                return GraphView(g, vfilt=composite)
-            elif type == "e":
-                return GraphView(g, efilt=composite)
-            else:
-                raise ValueError("must specify either 'v' or 'e' as type")
+            raise ValueError("must specify either 'v' or 'e' as type")
+        # Return a GraphView using the composite filter.
+        if type == "v":
+            return GraphView(g, vfilt=composite)
+        if type == "e":
+            return GraphView(g, efilt=composite)
+        raise ValueError("must specify either 'v' or 'e' as type")
 
     def filter_edges(self, predicate: Callable, return_view: bool = True) -> GraphView:
         """
@@ -577,7 +586,7 @@ class OnionNetSearcher:
         predicate : Callable
             A function taking a graph-tool Edge and returning True to keep it.
         return_view : bool
-            If True, returns a GraphView; if False, returns the raw edge‐bool PropertyMap.
+            If True, returns a GraphView; if False, returns the raw edge-bool PropertyMap.
 
         Returns
         -------
@@ -610,7 +619,10 @@ class OnionNetSearcher:
         return GraphView(gv_edges, vfilt=vfilt)
 
     def filter_edges_between_categories(
-        self, source_label: str, target_label: str, mode: str = "forward"
+        self,
+        source_label: str,
+        target_label: str,
+        mode: str = "forward",
     ) -> GraphView:
         """
         Filter edges by their endpoint layers and return a pruned GraphView.
@@ -697,7 +709,10 @@ class OnionNetSearcher:
         return self._prune_isolated(gv)
 
     def create_bipartite_gv(
-        self, layer1: str, layer2: str, prop_name: str = "layer_decoded"
+        self,
+        layer1: str,
+        layer2: str,
+        prop_name: str = "layer_decoded",
     ) -> GraphView:
         # Back-compat note: prop_name is ignored; layer_decoded is not required anymore.
         # You can optionally warn here if you like.

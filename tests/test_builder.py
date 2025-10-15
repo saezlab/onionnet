@@ -31,7 +31,7 @@ def toy_nodes():
             "layer": ["0", "0", "1"],
             "weight": [1.5, 2.0, 3.5],
             "group": ["x", "y", "x"],
-        }
+        },
     )
 
 
@@ -44,7 +44,7 @@ def toy_edges():
             "target_id": ["B", "C"],
             "target_layer": ["0", "1"],
             "strength": [10, 20],
-        }
+        },
     )
 
 
@@ -59,7 +59,11 @@ def test_missing_node_columns_raises(builder, toy_nodes, toy_edges):
 def test_add_vertices_basic(builder, core, toy_nodes):
     df = toy_nodes[["node_id", "layer"]]
     builder.add_vertices_from_dataframe(
-        df, id_col="node_id", layer_col="layer", property_cols=None, drop_na=False
+        df,
+        id_col="node_id",
+        layer_col="layer",
+        property_cols=None,
+        drop_na=False,
     )
     assert core.graph.num_vertices() == 3
     for _, row in df.iterrows():
@@ -70,6 +74,7 @@ def test_add_vertices_basic(builder, core, toy_nodes):
 
 # 3) add_vertices drops missing when drop_na=True
 def test_add_vertices_drop_na_true(builder):
+    _ = builder
     core = OnionNetGraph()
     bu = OnionNetBuilder(core)
     df = pd.DataFrame({"node_id": ["A", None, "C"], "layer": ["0", "0", None]})
@@ -79,6 +84,7 @@ def test_add_vertices_drop_na_true(builder):
 
 # 4) add_vertices raises on missing when drop_na=False
 def test_add_vertices_drop_na_false_raises(builder):
+    _ = builder
     core = OnionNetGraph()
     bu = OnionNetBuilder(core)
     df = pd.DataFrame({"node_id": ["A", None], "layer": ["0", "1"]})
@@ -90,7 +96,11 @@ def test_add_vertices_drop_na_false_raises(builder):
 # 5) add_vertices with props
 def test_add_vertices_with_props(builder, core, toy_nodes):
     builder.add_vertices_from_dataframe(
-        toy_nodes, "node_id", "layer", property_cols=["weight", "group"], drop_na=False
+        toy_nodes,
+        "node_id",
+        "layer",
+        property_cols=["weight", "group"],
+        drop_na=False,
     )
     assert np.allclose(core.graph.vp["weight"].a, toy_nodes["weight"].values)
     assert "group" in core.vertex_categorical_mappings
@@ -133,7 +143,10 @@ def test_add_edges_basic(builder, core, toy_nodes, toy_edges):
 def test_add_edges_drop_na_true(builder_and_core):
     builder, core = builder_and_core
     builder.add_vertices_from_dataframe(
-        pd.DataFrame({"node_id": ["A"], "layer": ["0"]}), "node_id", "layer", drop_na=False
+        pd.DataFrame({"node_id": ["A"], "layer": ["0"]}),
+        "node_id",
+        "layer",
+        drop_na=False,
     )
     df_e = pd.DataFrame(
         {
@@ -142,7 +155,7 @@ def test_add_edges_drop_na_true(builder_and_core):
             "target_id": ["A", "A"],
             "target_layer": ["0", "0"],
             "strength": [5, 6],
-        }
+        },
     )
     builder.add_edges_from_dataframe(
         df_e,
@@ -160,7 +173,10 @@ def test_add_edges_drop_na_true(builder_and_core):
 def test_add_edges_drop_na_false_raises(builder_and_core):
     builder, core = builder_and_core
     builder.add_vertices_from_dataframe(
-        pd.DataFrame({"node_id": ["A"], "layer": ["0"]}), "node_id", "layer", drop_na=False
+        pd.DataFrame({"node_id": ["A"], "layer": ["0"]}),
+        "node_id",
+        "layer",
+        drop_na=False,
     )
     df = pd.DataFrame(
         {
@@ -168,7 +184,7 @@ def test_add_edges_drop_na_false_raises(builder_and_core):
             "source_layer": ["0", "0"],
             "target_id": ["A", "A"],
             "target_layer": ["0", "0"],
-        }
+        },
     )
     with pytest.raises(ValueError) as exc:
         builder.add_edges_from_dataframe(
@@ -207,10 +223,15 @@ def test_edge_node_alignment(builder, core):
             "source_layer": ["0", "0"],
             "target_id": ["B", "A"],
             "target_layer": ["0", "0"],
-        }
+        },
     )
     builder.grow_onion(
-        df_n, df_e, node_prop_cols=[], edge_prop_cols=[], drop_na=False, drop_duplicates=True
+        df_n,
+        df_e,
+        node_prop_cols=[],
+        edge_prop_cols=[],
+        drop_na=False,
+        drop_duplicates=True,
     )
     assert core.graph.num_vertices() == 2
     assert core.graph.num_edges() == 1
@@ -244,7 +265,7 @@ def test_self_loops_are_supported(builder_and_core, toy_nodes):
             "target_id": ["A", "B", "A"],
             "target_layer": ["0", "0", "0"],
             "strength": [1, 2, 1],
-        }
+        },
     )
     builder.add_edges_from_dataframe(
         self_loops,
@@ -276,7 +297,12 @@ def test_mixed_type_ids_and_layers_cast_to_str(builder_and_core):
 def test_string_override_forces_categorical(builder_and_core, toy_nodes):
     builder, core = builder_and_core
     builder.add_vertices_from_dataframe(
-        toy_nodes, "node_id", "layer", property_cols=["weight"], drop_na=False, string_override=True
+        toy_nodes,
+        "node_id",
+        "layer",
+        property_cols=["weight"],
+        drop_na=False,
+        string_override=True,
     )
     assert "weight" in core.vertex_categorical_mappings
     vt = core.graph.vp["weight"].value_type()
@@ -285,6 +311,8 @@ def test_string_override_forces_categorical(builder_and_core, toy_nodes):
 
 # 16) custom property_types override inference
 def test_custom_property_types_override(builder_and_core, toy_nodes, toy_edges):
+    _ = toy_nodes
+    _ = toy_edges
     builder, core = builder_and_core
     # seed A and B
     builder.add_vertices_from_dataframe(
@@ -301,7 +329,7 @@ def test_custom_property_types_override(builder_and_core, toy_nodes, toy_edges):
             "target_id": ["B"],
             "target_layer": ["0"],
             "strength": [42],
-        }
+        },
     )
     builder.add_edges_from_dataframe(
         one_edge,
@@ -321,7 +349,11 @@ def test_nonexistent_prop_column_raises(builder_and_core, toy_nodes):
     builder, core = builder_and_core
     with pytest.raises(ValueError):
         builder.add_vertices_from_dataframe(
-            toy_nodes, "node_id", "layer", property_cols=["not_a_column"], drop_na=False
+            toy_nodes,
+            "node_id",
+            "layer",
+            property_cols=["not_a_column"],
+            drop_na=False,
         )
 
 
@@ -333,10 +365,14 @@ def test_extreme_and_empty_strings(builder_and_core):
             "node_id": ["", "   ", "X"],
             "layer": ["0", "1", "1"],
             "weight": [np.nan, np.inf, -np.inf],
-        }
+        },
     )
     builder.add_vertices_from_dataframe(
-        df, "node_id", "layer", property_cols=["weight"], drop_na=False
+        df,
+        "node_id",
+        "layer",
+        property_cols=["weight"],
+        drop_na=False,
     )
     assert core.graph.num_vertices() == 3
     w = core.graph.vp["weight"].a
@@ -352,7 +388,7 @@ def test_bulk_ingest_performance(builder_and_core):
         {
             "node_id": np.arange(N).astype(str),
             "layer": np.zeros(N, dtype=int).astype(str),
-        }
+        },
     )
     edges = pd.DataFrame(
         {
@@ -360,10 +396,15 @@ def test_bulk_ingest_performance(builder_and_core):
             "source_layer": ["0"] * (2 * N),
             "target_id": np.random.choice(nodes.node_id, size=2 * N),
             "target_layer": ["0"] * (2 * N),
-        }
+        },
     )
     builder.grow_onion(
-        nodes, edges, node_prop_cols=[], edge_prop_cols=[], drop_na=False, drop_duplicates=True
+        nodes,
+        edges,
+        node_prop_cols=[],
+        edge_prop_cols=[],
+        drop_na=False,
+        drop_duplicates=True,
     )
     assert core.graph.num_vertices() == N
     assert core.graph.num_edges() <= 2 * N
@@ -382,7 +423,7 @@ def test_multi_layer_cross_edges(builder_and_core):
         {
             "node_id": ["A", "B", "C", "D"],
             "layer": ["0", "1", "2", "1"],
-        }
+        },
     )
     edges = pd.DataFrame(
         {
@@ -390,10 +431,15 @@ def test_multi_layer_cross_edges(builder_and_core):
             "source_layer": ["0", "1", "2", "1", "0"],
             "target_id": ["B", "C", "D", "A", "A"],
             "target_layer": ["1", "2", "1", "0", "0"],
-        }
+        },
     )
     bldr.grow_onion(
-        nodes, edges, node_prop_cols=[], edge_prop_cols=[], drop_na=False, drop_duplicates=True
+        nodes,
+        edges,
+        node_prop_cols=[],
+        edge_prop_cols=[],
+        drop_na=False,
+        drop_duplicates=True,
     )
     # four real nodes, four valid edges
     assert core.graph.num_vertices() == 4
@@ -416,10 +462,15 @@ def test_incremental_builds_preserve_indices(builder_and_core):
     # first batch
     n1 = pd.DataFrame({"node_id": ["A", "B"], "layer": ["0", "0"]})
     e1 = pd.DataFrame(
-        {"source_id": ["A"], "source_layer": ["0"], "target_id": ["B"], "target_layer": ["0"]}
+        {"source_id": ["A"], "source_layer": ["0"], "target_id": ["B"], "target_layer": ["0"]},
     )
     bldr.grow_onion(
-        n1, e1, node_prop_cols=[], edge_prop_cols=[], drop_na=False, drop_duplicates=True
+        n1,
+        e1,
+        node_prop_cols=[],
+        edge_prop_cols=[],
+        drop_na=False,
+        drop_duplicates=True,
     )
     idxA = core.custom_id_to_vertex_index[(core._map_layer("0"), core._map_node_id("A"))]
     idxB = core.custom_id_to_vertex_index[(core._map_layer("0"), core._map_node_id("B"))]
@@ -429,10 +480,15 @@ def test_incremental_builds_preserve_indices(builder_and_core):
     # second batch
     n2 = pd.DataFrame({"node_id": ["C"], "layer": ["1"]})
     e2 = pd.DataFrame(
-        {"source_id": ["C"], "source_layer": ["1"], "target_id": ["A"], "target_layer": ["0"]}
+        {"source_id": ["C"], "source_layer": ["1"], "target_id": ["A"], "target_layer": ["0"]},
     )
     bldr.grow_onion(
-        n2, e2, node_prop_cols=[], edge_prop_cols=[], drop_na=False, drop_duplicates=True
+        n2,
+        e2,
+        node_prop_cols=[],
+        edge_prop_cols=[],
+        drop_na=False,
+        drop_duplicates=True,
     )
     # indices A and B unchanged; C is new
     assert core.custom_id_to_vertex_index[(core._map_layer("0"), core._map_node_id("A"))] == idxA
@@ -449,7 +505,11 @@ def test_interleaved_duplicates_and_missing(builder_and_core):
     bldr, core = builder_and_core
     df = pd.DataFrame({"node_id": ["A", "A", None, "C", "C"], "layer": ["0", "0", "1", None, "2"]})
     bldr.add_vertices_from_dataframe(
-        df, "node_id", "layer", property_cols=None, drop_na=True
+        df,
+        "node_id",
+        "layer",
+        property_cols=None,
+        drop_na=True,
     )  # must drop the None layer row
     # only A@0 and C@2 remain → 2 vertices
     assert core.graph.num_vertices() == 2
@@ -520,16 +580,21 @@ def test_bulk_ingest_random_noise(builder_and_core):
     df_n = pd.DataFrame({"node_id": ids, "layer": lays})
 
     # generate 1000 edges, possibly referring to some missing id/layer combos
-    s_ids = rng.choice(ids + ["XX", "YY"], size=1000)
+    s_ids = rng.choice([*ids, "XX", "YY"], size=1000)
     s_lays = rng.choice(["0", "1", "2"], size=1000)
-    t_ids = rng.choice(ids + ["ZZ"], size=1000)
+    t_ids = rng.choice([*ids, "ZZ"], size=1000)
     t_lays = rng.choice(["0", "1", "2"], size=1000)
     df_e = pd.DataFrame(
-        {"source_id": s_ids, "source_layer": s_lays, "target_id": t_ids, "target_layer": t_lays}
+        {"source_id": s_ids, "source_layer": s_lays, "target_id": t_ids, "target_layer": t_lays},
     )
 
     bldr.grow_onion(
-        df_n, df_e, node_prop_cols=[], edge_prop_cols=[], drop_na=False, drop_duplicates=True
+        df_n,
+        df_e,
+        node_prop_cols=[],
+        edge_prop_cols=[],
+        drop_na=False,
+        drop_duplicates=True,
     )
 
     # no more edges than raw rows
@@ -550,10 +615,14 @@ def test_vertex_props_with_nans(builder_and_core):
             "layer": ["0", "0", "0"],
             "p1": [1.0, np.nan, 3.0],
             "p2": ["x", None, "y"],
-        }
+        },
     )
     bldr.add_vertices_from_dataframe(
-        df, "node_id", "layer", property_cols=["p1", "p2"], drop_na=False
+        df,
+        "node_id",
+        "layer",
+        property_cols=["p1", "p2"],
+        drop_na=False,
     )
     # numeric nan preserved
     arr1 = core.graph.vp["p1"].a
@@ -579,7 +648,7 @@ def test_edge_props_with_nans(builder_and_core, toy_nodes):
             "target_id": ["B", "C", "A"],
             "target_layer": ["0", "1", "0"],
             "w": [10.0, np.nan, 30.0],
-        }
+        },
     )
     bldr.add_edges_from_dataframe(
         df,
@@ -622,7 +691,11 @@ def test_property_name_collision_with_internal(builder_and_core, toy_nodes):
     df["layer_hash"] = [0, 1, 2]
     with pytest.raises(ValueError):
         bldr.add_vertices_from_dataframe(
-            df, "node_id", "layer", property_cols=["layer_hash"], drop_na=False
+            df,
+            "node_id",
+            "layer",
+            property_cols=["layer_hash"],
+            drop_na=False,
         )
 
 
@@ -639,7 +712,7 @@ def test_edge_property_name_collision_with_internal(builder_and_core, toy_nodes)
             "target_id": ["B", "C"],
             "target_layer": ["0", "1"],
             "e_id": [0, 1],
-        }
+        },
     )
     with pytest.raises(ValueError):
         bldr.add_edges_from_dataframe(
@@ -653,7 +726,7 @@ def test_edge_property_name_collision_with_internal(builder_and_core, toy_nodes)
         )
 
 
-# 22) Edge‐side category mapping must extend, not restart, when you re‐grow with new categories
+# 22) Edge-side category mapping must extend, not restart, when you re-grow with new categories
 def test_edge_categorical_mapping_extends_not_restarts(builder_and_core, toy_nodes):
     bldr, core = builder_and_core
     # first seed the nodes
@@ -667,7 +740,7 @@ def test_edge_categorical_mapping_extends_not_restarts(builder_and_core, toy_nod
             "target_id": ["B", "C"],
             "target_layer": ["0", "1"],
             "cat": ["x", "y"],
-        }
+        },
     )
     bldr.add_edges_from_dataframe(
         df1,
@@ -688,7 +761,7 @@ def test_edge_categorical_mapping_extends_not_restarts(builder_and_core, toy_nod
             "target_id": ["A"],
             "target_layer": ["0"],
             "cat": ["z"],
-        }
+        },
     )
     bldr.add_edges_from_dataframe(
         df2,
@@ -717,7 +790,7 @@ def test_summary_counts(builder_and_core, toy_nodes, toy_edges):
         [
             toy_edges,
             pd.DataFrame(
-                [{"source_id": "A", "source_layer": "0", "target_id": None, "target_layer": "0"}]
+                [{"source_id": "A", "source_layer": "0", "target_id": None, "target_layer": "0"}],
             ),
         ],
         ignore_index=True,
@@ -783,7 +856,7 @@ def test_edge_partial_invalid_layers(builder_and_core, toy_nodes):
             "target_id": ["B", "A"],
             "target_layer": ["0", "0"],
             "w": [1, 2],
-        }
+        },
     )
     bldr.add_edges_from_dataframe(
         df,
@@ -812,7 +885,7 @@ def test_huge_categorical_cardinality(builder_and_core, toy_nodes):
             "target_id": ["B"] * N,
             "target_layer": ["0"] * N,
             "cat": cats,
-        }
+        },
     )
     bldr.add_edges_from_dataframe(
         df,
@@ -859,7 +932,7 @@ def test_edge_property_alignment_after_filtering(builder_and_core):
             "target_layer": ["0", "0", "0"],
             "w": [1, 2, 3],
             "cat": ["x", "y", "z"],
-        }
+        },
     )
     bldr.add_edges_from_dataframe(
         df,
@@ -875,7 +948,7 @@ def test_edge_property_alignment_after_filtering(builder_and_core):
     # both properties exist and length==1
     assert len(core.graph.ep["w"].a) == 1
     assert len(core.graph.ep["cat"].a) == 1
-    # and the single cat‐code maps back to "x"
+    # and the single cat-code maps back to "x"
     code = core.graph.ep["cat"].a[0]
     assert core.edge_categorical_mappings["cat"]["int_to_str"][code] == "x"
 
@@ -892,7 +965,7 @@ def test_two_builders_same_core():
             "target_id": ["A"],
             "target_layer": ["0"],
             "w": [5],
-        }
+        },
     )
     b1.add_vertices_from_dataframe(df_n, "node_id", "layer", drop_na=False)
     b2.add_edges_from_dataframe(

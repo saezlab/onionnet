@@ -107,8 +107,7 @@ class OnionNetGraph:
         """
         if node_id_str in self.node_id_str_to_int:
             return self.node_id_str_to_int[node_id_str]
-        else:
-            code = len(self.node_id_str_to_int)
-            self.node_id_str_to_int[node_id_str] = code
-            self.node_id_int_to_str[code] = node_id_str
-            return code
+        code = len(self.node_id_str_to_int)
+        self.node_id_str_to_int[node_id_str] = code
+        self.node_id_int_to_str[code] = node_id_str
+        return code

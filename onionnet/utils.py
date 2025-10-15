@@ -31,25 +31,23 @@ def infer_property_type(value):
     if hasattr(value, "dtype"):
         if pd.api.types.is_integer_dtype(value.dtype):
             return "int"
-        elif pd.api.types.is_float_dtype(value.dtype):
+        if pd.api.types.is_float_dtype(value.dtype):
             return "float"
-        elif pd.api.types.is_bool_dtype(value.dtype):
+        if pd.api.types.is_bool_dtype(value.dtype):
             return "bool"
-        else:
-            # For object or other dtypes, assume string
-            return "string"
+        # For object or other dtypes, assume string
+        return "string"
 
     # Fallback for single sample values
     if isinstance(value, int | np.integer):
         return "int"
-    elif isinstance(value, float | np.floating):
+    if isinstance(value, float | np.floating):
         return "float"
-    elif isinstance(value, str):
+    if isinstance(value, str):
         return "string"
-    elif isinstance(value, bool | np.bool_):
+    if isinstance(value, bool | np.bool_):
         return "bool"
-    else:
-        return "object"
+    return "object"
 
 
 def map_categorical_property(prop_name, values, mapping: dict[str, int] | None = None):
@@ -70,6 +68,8 @@ def map_categorical_property(prop_name, values, mapping: dict[str, int] | None =
             - mapped_values (np.ndarray): A NumPy array of integer codes corresponding to each value in 'values'.
             - mapping (Dict[str, int]): The updated dictionary mapping each unique categorical value to its integer code.
     """
+    # mark prop_name as intentionally unused in logic
+    _ = prop_name
     if mapping is None:
         mapping = {}
     mapped_values = np.empty(len(values), dtype=np.int32)

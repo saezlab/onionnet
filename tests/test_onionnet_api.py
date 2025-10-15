@@ -12,7 +12,7 @@ def test_onionnet_wrappers_and_node_map():
             "node_id": ["A", "B", "C"],
             "layer": ["L", "L", "R"],
             "lbl": ["a", "b", "c"],
-        }
+        },
     )
     df_edges = pd.DataFrame(
         {
@@ -20,7 +20,7 @@ def test_onionnet_wrappers_and_node_map():
             "source_layer": ["L", "L", "R"],
             "target_id": ["B", "C", "A"],
             "target_layer": ["L", "L", "L"],
-        }
+        },
     )
     on.grow_onion(
         df_nodes,

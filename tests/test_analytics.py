@@ -16,7 +16,7 @@ def test_layer_stats_with_dataframes_and_interlayer():
         {
             "node_id": ["n1", "n2", "n3"],
             "layer": ["A", "A", "B"],
-        }
+        },
     )
     df_edges = pd.DataFrame(
         {
@@ -26,11 +26,13 @@ def test_layer_stats_with_dataframes_and_interlayer():
             "target_layer": ["A", "B", "A"],
             # mark interlayer explicitly for the 2 cross-layer edges
             "interlayer": [False, True, True],
-        }
+        },
     )
 
     nodes_by_layer, edges_by_pair = layer_stats(
-        df_nodes=df_nodes, df_edges=df_edges, print_tables=False
+        df_nodes=df_nodes,
+        df_edges=df_edges,
+        print_tables=False,
     )
 
     # Node counts
@@ -54,7 +56,7 @@ def test_layer_stats_from_core_only():
         {
             "node_id": ["x", "y", "z"],
             "layer": ["X", "Y", "Y"],
-        }
+        },
     )
     b.add_vertices_from_dataframe(df_nodes, id_col="node_id", layer_col="layer", drop_na=False)
 
@@ -100,7 +102,8 @@ def test_plot_layer_metagraph_builds_graph_and_calls_draw(monkeypatch):
     pairs = pd.DataFrame(
         {"edges": [3, 1]},
         index=pd.MultiIndex.from_tuples(
-            [("A", "B"), ("B", "B")], names=["source_layer", "target_layer"]
+            [("A", "B"), ("B", "B")],
+            names=["source_layer", "target_layer"],
         ),
     )
     nodes = pd.DataFrame({"count": [5, 2]}, index=["A", "B"])
@@ -108,9 +111,10 @@ def test_plot_layer_metagraph_builds_graph_and_calls_draw(monkeypatch):
     captured = {}
 
     def fake_draw(g, **kwargs):
+        _ = g
         captured["graph"] = g
         captured["kwargs"] = kwargs
-        return None
+        return
 
     # Monkeypatch the draw function used inside plot_layer_metagraph. The
     # function performs a local import `from graph_tool.all import ... graph_draw`,
@@ -170,7 +174,8 @@ def test_plot_layer_metagraph_auto_colors_and_padding(monkeypatch):
     pairs = pd.DataFrame(
         {"edges": [2, 2]},
         index=pd.MultiIndex.from_tuples(
-            [("alpha_u", "alpha_v"), ("beta_x", "beta_y")], names=["source_layer", "target_layer"]
+            [("alpha_u", "alpha_v"), ("beta_x", "beta_y")],
+            names=["source_layer", "target_layer"],
         ),
     )
     nodes = pd.DataFrame({"count": [10, 4, 6, 2]}, index=["alpha_u", "alpha_v", "beta_x", "beta_y"])
@@ -178,8 +183,9 @@ def test_plot_layer_metagraph_auto_colors_and_padding(monkeypatch):
     captured = {}
 
     def fake_draw(g, **kwargs):
+        _ = g
         captured["kwargs"] = kwargs
-        return None
+        return
 
     import graph_tool.all as gt_all
 
@@ -207,8 +213,9 @@ def test_plot_layer_metagraph_no_labels_and_empty_edges(monkeypatch):
     called = {}
 
     def fake_draw(g, **kwargs):
+        _ = g
         called["kwargs"] = kwargs
-        return None
+        return
 
     import graph_tool.all as gt_all
 
@@ -216,7 +223,10 @@ def test_plot_layer_metagraph_no_labels_and_empty_edges(monkeypatch):
 
     # No nodes_by_layer, no labels → go through default size path and vertex_text=None
     plot_layer_metagraph(
-        empty_pairs, nodes_by_layer=None, show_labels=False, show_edge_counts=False
+        empty_pairs,
+        nodes_by_layer=None,
+        show_labels=False,
+        show_edge_counts=False,
     )
     assert called["kwargs"]["vertex_text"] is None
 
@@ -231,11 +241,13 @@ def test_layer_stats_edges_without_interlayer_and_uniform_weights():
             "source_layer": ["X", "X"],
             "target_id": ["c", "d"],
             "target_layer": ["Y", "Y"],
-        }
+        },
     )
 
     nodes_by_layer, edges_by_pair = layer_stats(
-        df_nodes=df_nodes, df_edges=df_edges, print_tables=False
+        df_nodes=df_nodes,
+        df_edges=df_edges,
+        print_tables=False,
     )
     assert nodes_by_layer.loc["X", "count"] == 2 and nodes_by_layer.loc["Y", "count"] == 2
     # uniform weights: both edges are X->Y, so one pair with count=2
@@ -247,14 +259,16 @@ def test_plot_layer_metagraph_uniform_edge_weights(monkeypatch):
     pairs = pd.DataFrame(
         {"edges": [5, 5]},
         index=pd.MultiIndex.from_tuples(
-            [("A", "B"), ("B", "A")], names=["source_layer", "target_layer"]
+            [("A", "B"), ("B", "A")],
+            names=["source_layer", "target_layer"],
         ),
     )
     captured = {}
 
     def fake_draw(g, **kwargs):
+        _ = g
         captured["kwargs"] = kwargs
-        return None
+        return
 
     import graph_tool.all as gt_all
 
@@ -291,11 +305,14 @@ def test_layer_stats_edges_from_core_properties():
     # Provide df_nodes for node counts; let edges_by_pair come from core.ep
     df_nodes = pd.DataFrame({"node_id": ["A", "B", "C"], "layer": ["L1", "L2", "L1"]})
     nodes_by_layer, edges_by_pair = layer_stats(
-        df_nodes=df_nodes, df_edges=None, core=core, print_tables=False
+        df_nodes=df_nodes,
+        df_edges=None,
+        core=core,
+        print_tables=False,
     )
     # Expect pairs counted from core's edge props
     assert set(edges_by_pair.index.get_level_values(0)) | set(
-        edges_by_pair.index.get_level_values(1)
+        edges_by_pair.index.get_level_values(1),
     ) == {"L1", "L2"}
 
 
@@ -308,7 +325,7 @@ def test_layer_stats_print_tables(capsys):
             "source_layer": ["L"],
             "target_id": ["b"],
             "target_layer": ["L"],
-        }
+        },
     )
     layer_stats(df_nodes=df_nodes, df_edges=df_edges, print_tables=True)
     out = capsys.readouterr().out

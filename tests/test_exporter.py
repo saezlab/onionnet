@@ -28,7 +28,7 @@ def simple_graph():
                 "source_layer": ["0"],
                 "target_id": ["B"],
                 "target_layer": ["0"],
-            }
+            },
         ),
         "source_id",
         "source_layer",
@@ -67,7 +67,7 @@ def chain_graph_and_searcher():
             "source_layer": ["0", "0"],
             "target_id": ["B", "C"],
             "target_layer": ["0", "0"],
-        }
+        },
     )
     b.add_edges_from_dataframe(
         df_edges,
@@ -86,6 +86,7 @@ def chain_graph_and_searcher():
 
 
 def test_export_vertices_to_pandas(builder_and_core, simple_graph):
+    _ = simple_graph
     """
     When exporting vertices without specifying prop_names, all vp keys appear;
     default return_type='pandas' yields a DataFrame.
@@ -93,10 +94,14 @@ def test_export_vertices_to_pandas(builder_and_core, simple_graph):
     # add an extra categorical prop 'grp'
     builder, core = builder_and_core
     df = pd.DataFrame(
-        {"node_id": ["A", "B", "C"], "layer": ["0", "0", "0"], "grp": ["x", "y", "x"]}
+        {"node_id": ["A", "B", "C"], "layer": ["0", "0", "0"], "grp": ["x", "y", "x"]},
     )
     builder.add_vertices_from_dataframe(
-        df, "node_id", "layer", property_cols=["grp"], drop_na=False
+        df,
+        "node_id",
+        "layer",
+        property_cols=["grp"],
+        drop_na=False,
     )
 
     df_out = export_info(core.graph, mode="v", return_type="pandas")
@@ -126,7 +131,7 @@ def test_export_edges_to_list(builder_and_core):
             "target_id": ["B"],
             "target_layer": ["0"],
             "strength": [42],
-        }
+        },
     )
     builder.add_edges_from_dataframe(
         df_e,
@@ -165,7 +170,7 @@ def test_export_edges_to_dict(builder_and_core):
             "target_id": ["B", "B"],
             "target_layer": ["0", "0"],
             "w": [1, 2],
-        }
+        },
     )
     builder.add_edges_from_dataframe(
         df_e,
@@ -270,7 +275,7 @@ def test_export_edges_e_id_none(builder_and_core):
     # add one edge without any index
     builder.add_edges_from_dataframe(
         pd.DataFrame(
-            {"source_id": ["A"], "source_layer": ["0"], "target_id": ["B"], "target_layer": ["0"]}
+            {"source_id": ["A"], "source_layer": ["0"], "target_id": ["B"], "target_layer": ["0"]},
         ),
         "source_id",
         "source_layer",
@@ -295,7 +300,7 @@ def _build_ab_edge():
     )
     b.add_edges_from_dataframe(
         pd.DataFrame(
-            {"source_id": ["A"], "source_layer": ["0"], "target_id": ["B"], "target_layer": ["0"]}
+            {"source_id": ["A"], "source_layer": ["0"], "target_id": ["B"], "target_layer": ["0"]},
         ),
         "source_id",
         "source_layer",
@@ -380,7 +385,7 @@ def test_export_edges_on_graphview_subset_ids_preserved():
                 "source_layer": ["0", "0", "0"],
                 "target_id": ["B", "C", "C"],
                 "target_layer": ["0", "0", "0"],
-            }
+            },
         ),
         "source_id",
         "source_layer",
@@ -427,7 +432,10 @@ def test_export_edges_collision_names_in_prop_names_are_ignored():
     core.graph.ep["w"] = w
 
     df = export_info(
-        core.graph, mode="e", prop_names=["e_id", "source", "target", "w"], return_type="pandas"
+        core.graph,
+        mode="e",
+        prop_names=["e_id", "source", "target", "w"],
+        return_type="pandas",
     )
     assert list(df.columns) == ["e_id", "source", "target", "w"]
     assert df["w"].iloc[0] == 5

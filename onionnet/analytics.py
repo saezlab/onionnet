@@ -35,6 +35,8 @@ if TYPE_CHECKING:
     # For static analysis; avoids runtime import cycles
     from collections.abc import Callable
 
+    from graph_tool.all import Graph, PropertyMap
+
     from .core import OnionNetGraph
 
 
@@ -101,7 +103,7 @@ def layer_stats(
             interlayer_edge_count = int(df_edges["interlayer"].sum())
         else:
             interlayer_edge_count = int(
-                (df_edges[source_layer_col] != df_edges[target_layer_col]).sum()
+                (df_edges[source_layer_col] != df_edges[target_layer_col]).sum(),
             )
 
         edges_by_pair = (
@@ -126,7 +128,8 @@ def layer_stats(
             ser = pd.Series(list(zip(s, t, strict=False)))
             edges_by_pair = ser.value_counts().sort_values(ascending=False).to_frame("edges")
             edges_by_pair.index = pd.MultiIndex.from_tuples(
-                edges_by_pair.index, names=[source_layer_col, target_layer_col]
+                edges_by_pair.index,
+                names=[source_layer_col, target_layer_col],
             )
             interlayer_edge_count = int((pd.Series(s) != pd.Series(t)).sum())
 
@@ -174,8 +177,8 @@ def plot_layer_metagraph(
     output_size: tuple[int, int] = (900, 700),
     return_graph: bool = False,
     # custom positioning (reuse prior layout)
-    pos=None,
-):
+    pos: PropertyMap | None = None,
+) -> tuple[Graph, PropertyMap] | None:
     """
     Draw a meta-graph whose vertices are layers and edges count cross-layer edges.
 
@@ -211,7 +214,9 @@ def plot_layer_metagraph(
 
     Returns
     -------
-    None or (Graph, PropertyMap)
+    (Graph, PropertyMap) or None
+        Returns the constructed meta-graph and its layout if ``return_graph=True``,
+        otherwise returns ``None``.
     """
     # Local imports so tests can monkeypatch and to avoid heavy deps at import-time
     from graph_tool.all import Graph, graph_draw, sfdp_layout
@@ -220,11 +225,11 @@ def plot_layer_metagraph(
 
     if not isinstance(edges_by_pair, pd.DataFrame) or "edges" not in edges_by_pair.columns:
         raise ValueError(
-            "edges_by_pair must be a DataFrame with an 'edges' column and MultiIndex of (source_layer, target_layer)."
+            "edges_by_pair must be a DataFrame with an 'edges' column and MultiIndex of (source_layer, target_layer).",
         )
     if not isinstance(edges_by_pair.index, pd.MultiIndex):
         raise ValueError(
-            "edges_by_pair index must be a MultiIndex of (source_layer, target_layer)."
+            "edges_by_pair index must be a MultiIndex of (source_layer, target_layer).",
         )
 
     def _scale(vals: np.ndarray, mode: str, out_range: tuple[float, float]) -> np.ndarray:
@@ -248,7 +253,7 @@ def plot_layer_metagraph(
         return n
 
     layers = sorted(
-        set(edges_by_pair.index.get_level_values(0)) | set(edges_by_pair.index.get_level_values(1))
+        set(edges_by_pair.index.get_level_values(0)) | set(edges_by_pair.index.get_level_values(1)),
     )
 
     mg = Graph(directed=True)
@@ -347,7 +352,11 @@ def plot_layer_metagraph(
 
     # Layout: keep user-supplied pos if given
     if pos is None:
-        pos = sfdp_layout(mg)
+        # Choose layout based on argument (currently only 'sfdp' available)
+        if layout == "sfdp":
+            pos = sfdp_layout(mg)
+        else:
+            raise ValueError(f"Unknown layout '{layout}'.")
 
     # Fonts
     v_font = (
@@ -375,3 +384,4 @@ def plot_layer_metagraph(
 
     if return_graph:
         return mg, pos
+    return None

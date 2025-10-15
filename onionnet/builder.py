@@ -61,8 +61,8 @@ class OnionNetBuilder:
         edge_source_layer_col: str = "source_layer",
         edge_target_id_col: str = "target_id",
         edge_target_layer_col: str = "target_layer",
-        vertex_property_types: dict = None,
-        edge_property_types: dict = None,
+        vertex_property_types: dict | None = None,
+        edge_property_types: dict | None = None,
         verbose: bool = True,
     ) -> None:
         """
@@ -99,13 +99,16 @@ class OnionNetBuilder:
             node_prop_cols = []
         if edge_prop_cols is None:
             edge_prop_cols = []
-        missing_nodes = set([node_id_col, node_layer_col] + node_prop_cols) - set(df_nodes.columns)
+        missing_nodes = {node_id_col, node_layer_col, *node_prop_cols} - set(df_nodes.columns)
         if missing_nodes:
             raise ValueError(f"Missing node columns: {missing_nodes}")
-        missing_edges = set(
-            [edge_source_id_col, edge_source_layer_col, edge_target_id_col, edge_target_layer_col]
-            + edge_prop_cols
-        ) - set(df_edges.columns)
+        missing_edges = {
+            edge_source_id_col,
+            edge_source_layer_col,
+            edge_target_id_col,
+            edge_target_layer_col,
+            *edge_prop_cols,
+        } - set(df_edges.columns)
         if missing_edges:
             raise ValueError(f"Missing edge columns: {missing_edges}")
 
@@ -126,7 +129,7 @@ class OnionNetBuilder:
                     edge_source_layer_col,
                     edge_target_id_col,
                     edge_target_layer_col,
-                ]
+                ],
             )
         else:
             # raise if any NA in keys
@@ -161,7 +164,7 @@ class OnionNetBuilder:
                     edge_source_layer_col,
                     edge_target_id_col,
                     edge_target_layer_col,
-                ]
+                ],
             )
         else:
             df_n_clean = df_n_no_na
@@ -170,14 +173,14 @@ class OnionNetBuilder:
         self._stats["nodes_deduped"] = len(df_n_no_na) - len(df_n_clean)
         self._stats["edges_deduped"] = len(df_e_no_na) - len(df_e_clean)
 
-        # 3) Edge→node alignment: drop edges whose endpoints weren’t ingested (by name)
+        # 3) Edge->node alignment: drop edges whose endpoints weren't ingested (by name)
         #    Do NOT mutate the core mapping when validating; use the node df only.
         node_pairs = set(
             zip(
                 df_n_clean[node_layer_col].astype(str),
                 df_n_clean[node_id_col].astype(str),
                 strict=False,
-            )
+            ),
         )
         # include already present vertices in the graph as valid endpoints
         for (li, ni), _vid in list(self.core.custom_id_to_vertex_index.items()):
@@ -268,7 +271,7 @@ class OnionNetBuilder:
         drop_na: bool = True,
         drop_duplicates: bool = True,
         string_override: bool = False,
-        property_types: dict = None,
+        property_types: dict | None = None,
     ) -> None:
         """
         Add vertices to the graph from a DataFrame containing node information.
@@ -292,7 +295,7 @@ class OnionNetBuilder:
             collision = set(property_cols) & internal
             if collision:
                 raise ValueError(
-                    f"Cannot use {collision!r} as property name, it's reserved for internal keys"
+                    f"Cannot use {collision!r} as property name, it's reserved for internal keys",
                 )
         # prop-col existence
         if property_cols:
@@ -307,7 +310,7 @@ class OnionNetBuilder:
             if df[[id_col, layer_col]].isna().any().any():
                 raise ValueError(
                     f"Detected NA in {id_col}/{layer_col} but drop_na=False; "
-                    "please set drop_na=True or clean your data first."
+                    "please set drop_na=True or clean your data first.",
                 )
         # warn if duplicates would be kept
         if not drop_duplicates:
@@ -396,7 +399,8 @@ class OnionNetBuilder:
                         self.core.graph.vp[prop] = self.core.graph.new_vertex_property("int")
                     if n_new:
                         self.core.graph.vp[prop].a[start:] = np.array(
-                            [mapped[i] for i in new_rows_idx], dtype=int
+                            [mapped[i] for i in new_rows_idx],
+                            dtype=int,
                         )
                     for i, cid in enumerate(custom_ids):
                         if not is_new[i]:
@@ -414,7 +418,7 @@ class OnionNetBuilder:
                             and property_types[prop] in ("int", "float")
                         ):
                             raise ValueError(
-                                f"Vertex property '{prop}' was categorical; cannot ingest as numeric."
+                                f"Vertex property '{prop}' was categorical; cannot ingest as numeric.",
                             )
                     else:
                         # previously numeric; forbid switching to categorical
@@ -424,7 +428,7 @@ class OnionNetBuilder:
                             and property_types[prop] in ("str", "string")
                         ) or string_override:
                             raise ValueError(
-                                f"Vertex property '{prop}' was numeric; cannot ingest as categorical."
+                                f"Vertex property '{prop}' was numeric; cannot ingest as categorical.",
                             )
 
     def add_edges_from_dataframe(
@@ -438,7 +442,7 @@ class OnionNetBuilder:
         drop_na: bool = True,
         drop_duplicates: bool = True,
         string_override: bool = False,
-        property_types: dict = None,
+        property_types: dict | None = None,
         consider_props_in_duplicate: bool = False,
     ) -> None:
         """
@@ -466,7 +470,7 @@ class OnionNetBuilder:
             collision = set(property_cols) & internal
             if collision:
                 raise ValueError(
-                    f"Cannot use {collision!r} as property name, it's reserved for internal keys"
+                    f"Cannot use {collision!r} as property name, it's reserved for internal keys",
                 )
         # prop-col existence
         if property_cols:
@@ -477,7 +481,7 @@ class OnionNetBuilder:
         # NA handling
         if drop_na:
             df = df.dropna(
-                subset=[source_id_col, source_layer_col, target_id_col, target_layer_col]
+                subset=[source_id_col, source_layer_col, target_id_col, target_layer_col],
             )
         else:
             if (
@@ -488,7 +492,7 @@ class OnionNetBuilder:
             ):
                 raise ValueError(
                     "Detected NA in edge keys but drop_na=False; "
-                    "please set drop_na=True or clean your data first."
+                    "please set drop_na=True or clean your data first.",
                 )
         uniq_subset = [source_id_col, source_layer_col, target_id_col, target_layer_col]
         if drop_duplicates:
@@ -497,7 +501,7 @@ class OnionNetBuilder:
             df = df.drop_duplicates(subset=uniq_subset)
         else:  # warn if duplicates would be kept
             ndup = df.duplicated(
-                subset=[source_id_col, source_layer_col, target_id_col, target_layer_col]
+                subset=[source_id_col, source_layer_col, target_id_col, target_layer_col],
             ).sum()
             if ndup:
                 warnings.warn(
@@ -541,7 +545,7 @@ class OnionNetBuilder:
             new_valid = []
             for k, (s, t) in enumerate(zip(src_valid, tgt_valid, strict=False)):
                 if consider_props_in_duplicate and property_cols:
-                    key = (s, t) + tuple(df_valid.iloc[k][p] for p in property_cols)
+                    key = (s, t, *(df_valid.iloc[k][p] for p in property_cols))
                 else:
                     key = (s, t)
                 if key in seen:
@@ -567,7 +571,7 @@ class OnionNetBuilder:
                             and property_types[prop] in ("int", "float")
                         ):
                             raise ValueError(
-                                f"Edge property '{prop}' was categorical; cannot ingest as numeric."
+                                f"Edge property '{prop}' was categorical; cannot ingest as numeric.",
                             )
                     else:
                         # previously numeric, forbid switching to categorical
@@ -579,7 +583,7 @@ class OnionNetBuilder:
                             string_override and (not property_types or prop not in property_types)
                         ):
                             raise ValueError(
-                                f"Edge property '{prop}' was numeric; cannot ingest as categorical."
+                                f"Edge property '{prop}' was numeric; cannot ingest as categorical.",
                             )
             for prop in property_cols:
                 vals = df.iloc[valid][prop].values
@@ -614,7 +618,7 @@ class OnionNetBuilder:
                             "int_to_str": inv,
                         }
 
-                    # make sure the edge‐property exists as an int property
+                    # make sure the edge-property exists as an int property
                     if prop not in self.core.graph.ep:
                         self.core.graph.ep[prop] = self.core.graph.new_edge_property("int")
 
@@ -623,7 +627,7 @@ class OnionNetBuilder:
 
         # now actually add into the graph
         if prop_vals:
-            # stack the (src,tgt) with each prop‐column’s values
+            # stack the (src,tgt) with each prop-column's values
             arr = np.column_stack((edge_arr, *prop_vals))
             self.core.graph.add_edge_list(arr, eprops=prop_maps)
         else:

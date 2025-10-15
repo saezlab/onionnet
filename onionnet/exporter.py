@@ -126,16 +126,16 @@ def export_info(g, mode="v", prop_names=None, noisy=False, return_type="pandas")
             else:
                 print(
                     f"Edge {row['e_id']} ({row['source']} -> {row['target']}): "
-                    + ", ".join(f"{p} = {row[p]}" for p in props)
+                    + ", ".join(f"{p} = {row[p]}" for p in props),
                 )
         rows.append(row)
 
     if return_type == "list":
         return rows
-    elif return_type == "dict":
+    if return_type == "dict":
         key = "v_int" if mode == "v" else "e_id"
         return {r[key]: r for r in rows}
-    elif return_type == "pandas":
+    if return_type == "pandas":
         df = pd.DataFrame(rows)
         # Force Python ints for built-in edge columns so tests see `int`, not np.int64
         if mode == "e":
@@ -143,5 +143,4 @@ def export_info(g, mode="v", prop_names=None, noisy=False, return_type="pandas")
                 if col in df.columns:
                     df[col] = df[col].map(int).astype(object)
         return df
-    else:
-        raise ValueError("Invalid return_type. Use 'list', 'dict', or 'pandas'.")
+    raise ValueError("Invalid return_type. Use 'list', 'dict', or 'pandas'.")

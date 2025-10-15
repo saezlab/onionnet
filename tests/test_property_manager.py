@@ -34,10 +34,14 @@ def pm_and_graph_simple():
 
     # vertices A, B, C with categorical “grp”
     df_nodes = pd.DataFrame(
-        {"node_id": ["A", "B", "C"], "layer": ["0", "0", "0"], "grp": ["x", "y", "x"]}
+        {"node_id": ["A", "B", "C"], "layer": ["0", "0", "0"], "grp": ["x", "y", "x"]},
     )
     bldr.add_vertices_from_dataframe(
-        df_nodes, "node_id", "layer", property_cols=["grp"], drop_na=False
+        df_nodes,
+        "node_id",
+        "layer",
+        property_cols=["grp"],
+        drop_na=False,
     )
 
     # edges A→B and B→C with categorical “lbl”
@@ -48,7 +52,7 @@ def pm_and_graph_simple():
             "target_id": ["B", "C"],
             "target_layer": ["0", "0"],
             "lbl": ["foo", "bar"],
-        }
+        },
     )
     bldr.add_edges_from_dataframe(
         df_edges,
@@ -75,10 +79,14 @@ def pm_and_graph_mixed():
             "layer": ["0", "0", "0"],
             "grp": ["x", "y", None],  # one None to test default mapping
             "score": [0.5, np.nan, 1.5],  # one NaN to trigger astype(int) error
-        }
+        },
     )
     bldr.add_vertices_from_dataframe(
-        df_n, "node_id", "layer", property_cols=["grp", "score"], drop_na=False
+        df_n,
+        "node_id",
+        "layer",
+        property_cols=["grp", "score"],
+        drop_na=False,
     )
 
     # seed some edges with categorical prop
@@ -89,7 +97,7 @@ def pm_and_graph_mixed():
             "target_id": ["B", "C", "A"],
             "target_layer": ["0", "0", "0"],
             "lbl": ["foo", "bar", "baz"],
-        }
+        },
     )
     bldr.add_edges_from_dataframe(
         df_e,
@@ -120,7 +128,7 @@ def toy_nodes():
             "layer": ["0", "0", "1"],
             "weight": [1.5, 2.0, 3.5],
             "group": ["x", "y", "x"],
-        }
+        },
     )
 
 
@@ -133,7 +141,7 @@ def toy_edges():
             "target_id": ["B", "C"],
             "target_layer": ["0", "1"],
             "strength": [10, 20],
-        }
+        },
     )
 
 
@@ -333,7 +341,7 @@ def test_decode_property_labels_bulk(pm_and_graph_simple, capsys):
         {
             "grp": ["x", "y", "x"],  # object → decoded
             "weight": [1.0, 2.0, 3.0],  # float → left alone
-        }
+        },
     )
     pm.decode_property_labels_bulk(df, encoded_prop_type="v")
 
@@ -485,7 +493,11 @@ def test_partial_custom_mapping_with_default(pm_and_graph_simple):
     x_code = grp_map["x"]
     custom_map = {x_code: "EX"}  # no mapping for 'y'
     pm.decode_property_labels(
-        "v", "grp", mapping_dict=custom_map, default_label="MISSING", new_prop_name="grp_partial"
+        "v",
+        "grp",
+        mapping_dict=custom_map,
+        default_label="MISSING",
+        new_prop_name="grp_partial",
     )
     decoded = [core.graph.vp["grp_partial"][v] for v in core.graph.vertices()]
     assert "EX" in decoded
@@ -560,32 +572,12 @@ def test_high_cardinality_vertex_decode():
     assert len({d for d in decoded if d.startswith("cat_")}) >= N
 
 
-# @pytest.mark.slow
-# def test_high_cardinality_vertex_decode_huge():
-#     # Stress test: create high-cardinality vertex categorical prop and decode it.
-#     core = OnionNetGraph()
-#     bldr = OnionNetBuilder(core)
-#     N = 10_000_000  # large test
-#     cats = [f"cat_{i}" for i in range(N)]
-#     df = pd.DataFrame({
-#         "node_id": [str(i) for i in range(N)],
-#         "layer": ["0"] * N,
-#         "huge": cats
-#     })
-#     bldr.add_vertices_from_dataframe(df, "node_id", "layer", property_cols=["huge"], drop_na=False)
-#     pm = OnionNetPropertyManager(core)
-#     pm.decode_property_labels('v', 'huge', new_prop_name='huge_decoded')
-#     decoded = {core.graph.vp['huge_decoded'][v] for v in core.graph.vertices() if isinstance(core.graph.vp['huge_decoded'][v], str)}
-#     # Expect at least all unique strings to be present in decoded
-#     assert len({d for d in decoded if d.startswith("cat_")}) >= N
-
-
 def test_decode_overwrites_existing(pm_and_graph_simple):
     # Decoding into an existing decoded property should restore correct values, not preserve manual overrides.
     core, pm = pm_and_graph_simple
     pm.decode_property_labels("v", "grp", new_prop_name="grp_decoded")
     # manually override one decoded entry
-    first_v = list(core.graph.vertices())[0]
+    first_v = next(iter(core.graph.vertices()))
     core.graph.vp["grp_decoded"][first_v] = "OVERRIDE"
     pm.decode_property_labels("v", "grp", new_prop_name="grp_decoded")
     decoded = [core.graph.vp["grp_decoded"][v] for v in core.graph.vertices()]
@@ -606,7 +598,11 @@ def pm_and_graph_edge_extra():
     # seed vertices so edges have valid endpoints
     df_nodes = pd.DataFrame({"node_id": ["A", "B", "C"], "layer": ["0", "0", "0"]})
     bldr.add_vertices_from_dataframe(
-        df_nodes, "node_id", "layer", property_cols=None, drop_na=False
+        df_nodes,
+        "node_id",
+        "layer",
+        property_cols=None,
+        drop_na=False,
     )
 
     # seed edges with a categorical 'lbl' and numeric 'w'
@@ -618,7 +614,7 @@ def pm_and_graph_edge_extra():
             "target_layer": ["0", "0", "0"],
             "lbl": ["foo", "bar", "baz"],
             "w": [1.0, 2.0, 3.0],
-        }
+        },
     )
     bldr.add_edges_from_dataframe(
         df_edges,
@@ -755,7 +751,7 @@ def test_edge_extreme_numeric_properties_still_show(builder_and_core, toy_nodes)
             "target_id": ["B", "C", "C"],
             "target_layer": ["0", "1", "1"],
             "w": [np.inf, -np.inf, np.nan],
-        }
+        },
     )
     bldr.add_edges_from_dataframe(
         df,
@@ -802,7 +798,7 @@ def test_whitespace_id_splits_or_collapses(builder_and_core):
             "target_id": ["A", "A", " A"],
             "target_layer": ["0"] * 3,
             "strength": [1, 2, 3],
-        }
+        },
     )
     bldr.add_edges_from_dataframe(
         edges,
@@ -834,7 +830,7 @@ def test_edge_property_alignment_after_invalid_filtering(builder_and_core):
             "target_id": ["B", "B", "B"],
             "target_layer": ["0", "0", "0"],
             "strength": [100, 200, 300],
-        }
+        },
     )
     bldr.add_edges_from_dataframe(
         df_e,
@@ -863,10 +859,15 @@ def test_duplicate_vertex_overwrite_preserves_existing_edges(builder_and_core):
             "target_id": ["B"],
             "target_layer": ["0"],
             "p": [1],
-        }
+        },
     )
     bldr.grow_onion(
-        nodes, edge, node_prop_cols=[], edge_prop_cols=["p"], drop_na=False, drop_duplicates=False
+        nodes,
+        edge,
+        node_prop_cols=[],
+        edge_prop_cols=["p"],
+        drop_na=False,
+        drop_duplicates=False,
     )
     # record original source vertex index (A)
     original_idx = core.custom_id_to_vertex_index[(core._map_layer("0"), core._map_node_id("A"))]
@@ -884,7 +885,7 @@ def test_duplicate_vertex_overwrite_preserves_existing_edges(builder_and_core):
     new_idx = core.custom_id_to_vertex_index[(core._map_layer("0"), core._map_node_id("A"))]
     assert new_idx != original_idx
     # existing edge should still have source = original_idx
-    e = list(core.graph.edges())[0]
+    e = next(iter(core.graph.edges()))
     assert e.source() == original_idx
 
 
@@ -893,7 +894,11 @@ def test_vertex_and_edge_property_name_separation(builder_and_core):
     # seed vertex with 'weight'
     df_n = pd.DataFrame({"node_id": ["A", "B"], "layer": ["0", "0"], "weight": [1, 2]})
     bldr.add_vertices_from_dataframe(
-        df_n, "node_id", "layer", property_cols=["weight"], drop_na=False
+        df_n,
+        "node_id",
+        "layer",
+        property_cols=["weight"],
+        drop_na=False,
     )
     # seed edge with same prop name
     bldr.add_edges_from_dataframe(
@@ -904,7 +909,7 @@ def test_vertex_and_edge_property_name_separation(builder_and_core):
                 "target_id": ["B"],
                 "target_layer": ["0"],
                 "weight": [99],
-            }
+            },
         ),
         source_id_col="source_id",
         source_layer_col="source_layer",
@@ -917,7 +922,7 @@ def test_vertex_and_edge_property_name_separation(builder_and_core):
     v_idx = core.custom_id_to_vertex_index[(core._map_layer("0"), core._map_node_id("A"))]
     assert core.graph.vp["weight"][core.graph.vertex(v_idx)] == 1
     # edge weight is 99
-    e = list(core.graph.edges())[0]
+    e = next(iter(core.graph.edges()))
     assert core.graph.ep["weight"][e] == 99
 
 
@@ -938,7 +943,7 @@ def test_directional_edges_are_distinct(builder_and_core):
             "target_id": ["B", "A"],
             "target_layer": ["0", "0"],
             "strength": [1, 2],
-        }
+        },
     )
     bldr.add_edges_from_dataframe(
         edges,
@@ -966,7 +971,7 @@ def test_cross_layer_inconsistency_detection(builder_and_core):
             "source_layer": ["1"],  # mismatched layer
             "target_id": ["B"],
             "target_layer": ["1"],
-        }
+        },
     )
     bldr.add_edges_from_dataframe(
         bad_edge,
@@ -994,17 +999,25 @@ def test_large_scale_near_collision_invariants(builder_and_core):
     warped = [i if idx % 2 == 0 else f"{i} " for idx, i in enumerate(base_ids)]
     layers = ["0", "1", "2"]
     df_n = pd.DataFrame(
-        {"node_id": np.random.choice(warped, size=100), "layer": np.random.choice(layers, size=100)}
+        {
+            "node_id": np.random.choice(warped, size=100),
+            "layer": np.random.choice(layers, size=100),
+        },
     )
     # add them
     bldr.add_vertices_from_dataframe(df_n, "node_id", "layer", drop_na=False)
     # random edges, some with invalid ids
-    s_ids = np.random.choice(warped + ["nonexistent"], size=500)
-    t_ids = np.random.choice(warped + ["missing"], size=500)
+    s_ids = np.random.choice([*warped, "nonexistent"], size=500)
+    t_ids = np.random.choice([*warped, "missing"], size=500)
     s_layers = np.random.choice(layers, size=500)
     t_layers = np.random.choice(layers, size=500)
     df_e = pd.DataFrame(
-        {"source_id": s_ids, "source_layer": s_layers, "target_id": t_ids, "target_layer": t_layers}
+        {
+            "source_id": s_ids,
+            "source_layer": s_layers,
+            "target_id": t_ids,
+            "target_layer": t_layers,
+        },
     )
     bldr.add_edges_from_dataframe(
         df_e,
@@ -1032,7 +1045,7 @@ def test_edges_before_vertices_do_not_create_them(builder_and_core):
             "target_id": ["B"],
             "target_layer": ["0"],
             "strength": [5],
-        }
+        },
     )
     bldr.add_edges_from_dataframe(
         df_e,
@@ -1046,7 +1059,10 @@ def test_edges_before_vertices_do_not_create_them(builder_and_core):
     assert core.graph.num_edges() == 0  # nothing added
     # add only A
     bldr.add_vertices_from_dataframe(
-        pd.DataFrame({"node_id": ["A"], "layer": ["0"]}), "node_id", "layer", drop_na=False
+        pd.DataFrame({"node_id": ["A"], "layer": ["0"]}),
+        "node_id",
+        "layer",
+        drop_na=False,
     )
     bldr.add_edges_from_dataframe(
         df_e,
@@ -1060,7 +1076,10 @@ def test_edges_before_vertices_do_not_create_them(builder_and_core):
     assert core.graph.num_edges() == 0  # still cannot add, B missing
     # add B and now edge should appear
     bldr.add_vertices_from_dataframe(
-        pd.DataFrame({"node_id": ["B"], "layer": ["0"]}), "node_id", "layer", drop_na=False
+        pd.DataFrame({"node_id": ["B"], "layer": ["0"]}),
+        "node_id",
+        "layer",
+        drop_na=False,
     )
     bldr.add_edges_from_dataframe(
         df_e,
@@ -1177,7 +1196,7 @@ def test_summary_invariants_complex(builder_and_core):
             "source_layer": ["0", "0", "0"],
             "target_id": ["A", "A", "0"],  # "0" is missing node
             "target_layer": ["0", "0", "0"],
-        }
+        },
     )
     bldr.grow_onion(
         df_nodes,
@@ -1218,7 +1237,12 @@ def test_vertex_property_type_conflict_reverse(builder_and_core):
     df = pd.DataFrame({"node_id": ["A"], "layer": ["0"], "foo": ["bar"]})
     # first ingest as categorical
     bldr.add_vertices_from_dataframe(
-        df, "node_id", "layer", property_cols=["foo"], drop_na=False, string_override=True
+        df,
+        "node_id",
+        "layer",
+        property_cols=["foo"],
+        drop_na=False,
+        string_override=True,
     )
     # now attempt to ingest again as numeric explicitly
     with pytest.raises(ValueError):
@@ -1238,7 +1262,11 @@ def test_decode_vertex_and_edge_same_name_separation(builder_and_core):
     # seed vertex and edge both with categorical "label"
     df_nodes = pd.DataFrame({"node_id": ["A", "B"], "layer": ["0", "0"], "label": ["u", "v"]})
     bldr.add_vertices_from_dataframe(
-        df_nodes, "node_id", "layer", property_cols=["label"], drop_na=False
+        df_nodes,
+        "node_id",
+        "layer",
+        property_cols=["label"],
+        drop_na=False,
     )
     df_edges = pd.DataFrame(
         {
@@ -1247,7 +1275,7 @@ def test_decode_vertex_and_edge_same_name_separation(builder_and_core):
             "target_id": ["B"],
             "target_layer": ["0"],
             "label": ["w"],
-        }
+        },
     )
     bldr.add_edges_from_dataframe(
         df_edges,
@@ -1291,7 +1319,7 @@ def test_high_cardinality_edge_decode(builder_and_core):
                 "target_id": "B",
                 "target_layer": "0",
                 "huge_lbl": lbl,
-            }
+            },
         )
     df = pd.DataFrame(edge_rows)
     bldr.add_edges_from_dataframe(
@@ -1391,7 +1419,7 @@ def test_edge_summary_and_property_alignment_after_invalid_filtering(builder_and
             "target_id": ["B", "B", "B"],
             "target_layer": ["0", "0", "0"],
             "strength": [100, 200, 300],
-        }
+        },
     )
     bldr.add_edges_from_dataframe(
         df_e,
@@ -1419,14 +1447,14 @@ def test_get_category_code_vertex_and_edge(pm_and_graph_simple):
     """
     core, pm = pm_and_graph_simple
 
-    # vertex‐side: 'grp' has categories 'x' and 'y'
+    # vertex-side: 'grp' has categories 'x' and 'y'
     code_x = pm.get_category_code("grp", "x", dim="v")
     code_y = pm.get_category_code("grp", "y", dim="v")
     assert isinstance(code_x, int)
     assert isinstance(code_y, int)
     assert code_x != code_y
 
-    # edge‐side: 'lbl' has categories 'foo' and 'bar'
+    # edge-side: 'lbl' has categories 'foo' and 'bar'
     e_code_foo = pm.get_category_code("lbl", "foo", dim="e")
     e_code_bar = pm.get_category_code("lbl", "bar", dim="e")
     assert isinstance(e_code_foo, int)
@@ -1465,7 +1493,7 @@ def test_get_category_code_unknown_label_raises(pm_and_graph_simple):
 def test_decode_edge_property_alignment_respects_edge_index():
     """
     Old bug: decoding wrote labels by zipping `for e in g.edges()` with prop.a,
-    assuming iteration order == edge-index order. That’s not guaranteed.
+    assuming iteration order == edge-index order. That's not guaranteed.
     This test constructs edges in an order that *differs* from iteration order,
     so a buggy implementation will swap labels.
     """
@@ -1488,7 +1516,7 @@ def test_decode_edge_property_alignment_respects_edge_index():
             "target_id": ["C", "B"],
             "target_layer": ["0", "0"],
             "lbl": ["bar", "foo"],
-        }
+        },
     )
     bldr.add_edges_from_dataframe(
         df_e,
@@ -1544,7 +1572,7 @@ def test_decode_edge_source_target_layers_map_correctly():
             "source_layer": ["L1", "L2"],
             "target_id": ["B", "C"],
             "target_layer": ["L2", "L1"],
-        }
+        },
     )
     # Keep layer columns as edge properties so we can decode them
     bldr.add_edges_from_dataframe(

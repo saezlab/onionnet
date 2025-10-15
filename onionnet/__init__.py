@@ -13,7 +13,7 @@ except Exception:  # pragma: no cover - fallback if needed
     except Exception:  # Last resort
         PackageNotFoundError = Exception  # type: ignore
 
-        def _pkg_version(name):  # type: ignore
+        def _pkg_version(_name):  # type: ignore
             return "0.0.0"
 
 
@@ -33,4 +33,4 @@ def __getattr__(name):
 
 
 def __dir__():
-    return sorted(list(globals().keys()) + ["OnionNet"])
+    return sorted([*list(globals().keys()), "OnionNet"])

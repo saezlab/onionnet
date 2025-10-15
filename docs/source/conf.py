@@ -24,7 +24,7 @@ extensions = [
     "sphinxcontrib.bibtex",  # if you have a references.bib
     "sphinx.ext.mathjax",  # render math
     "IPython.sphinxext.ipython_console_highlighting",
-    "sphinxext.opengraph",  # social‐media previews
+    "sphinxext.opengraph",  # social-media previews
 ]
 
 # Automatically create summaries for modules
@@ -67,10 +67,11 @@ except NameError:
     master_doc = "index"
 
 # If your package lives alongside docs/, make sure Sphinx can import it:
-import os
+from pathlib import Path
 import sys
 
-sys.path.insert(0, os.path.abspath(os.path.join("..", "..")))
+# Add project root to sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -85,9 +86,6 @@ html_theme_options = {
     "path_to_docs": "docs/source",
     "home_page_in_toc": False,
     "show_navbar_depth": 2,
-    # "launch_buttons": {   # if you want Binder/Colab
-    #   "binderhub_url": "https://mybinder.org",
-    # },
 }
 
 # (Optional) if you have a logo or favicon in _static:

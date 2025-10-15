@@ -3,7 +3,7 @@ from __future__ import annotations
 from itertools import zip_longest
 
 # For layout compute or load function
-import os
+from pathlib import Path
 from typing import Any
 import warnings
 
@@ -15,6 +15,33 @@ from matplotlib.patches import Patch
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+SHAPE_ALIASES = {
+    "circle": "o",
+    "o": "o",
+    "square": "s",
+    "s": "s",
+    "triangle": "^",
+    "triangle_up": "^",
+    "^": "^",
+    "triangle_down": "v",
+    "v": "v",
+    "diamond": "D",
+    "thin_diamond": "d",
+    "d": "d",
+    "D": "D",
+    "pentagon": "p",
+    "p": "p",
+    "hexagon": "h",
+    "hexagon1": "h",
+    "hex": "h",
+    "h": "h",
+    "star": "*",
+    "*": "*",
+    "plus": "+",
+    "+": "+",
+    "x": "x",
+}
 
 """
 This module provides visualization utilities for the OnionNet project. It includes functions for generating graph layouts,
@@ -128,11 +155,11 @@ def color_nodes(
             value = g.vp[prop_name][v]
             if value in custom_color_dict:
                 col = custom_color_dict[value]
-                v_color[v] = tuple(col[:3]) + (transparency,)
+                v_color[v] = (*tuple(col[:3]), transparency)
             else:
                 raise ValueError(f"Value '{value}' not found in custom_color_dict.")
         if generate_legend:
-            legend = {k: tuple(v[:3]) + (transparency,) for k, v in custom_color_dict.items()}
+            legend = {k: (*tuple(v[:3]), transparency) for k, v in custom_color_dict.items()}
 
     # Handle colors with custom colormap or default colormap
     elif method == "categorical":
@@ -142,9 +169,9 @@ def color_nodes(
         color_map = {cat: colormap(i % colormap_len) for i, cat in enumerate(categories)}
         for v in g.vertices():
             category = g.vp[prop_name][v]
-            v_color[v] = color_map[category][:3] + (transparency,)
+            v_color[v] = (*color_map[category][:3], transparency)
         if generate_legend:
-            legend = {cat: color_map[cat][:3] + (transparency,) for cat in categories}
+            legend = {cat: (*color_map[cat][:3], transparency) for cat in categories}
 
     elif method == "continuous":
         values = [float(g.vp[prop_name][v]) for v in g.vertices()]
@@ -159,11 +186,11 @@ def color_nodes(
         scalar_map = cm.ScalarMappable(norm=norm, cmap=colormap)
         for v in g.vertices():
             value = float(g.vp[prop_name][v])
-            v_color[v] = scalar_map.to_rgba(value)[:3] + (transparency,)
+            v_color[v] = (*scalar_map.to_rgba(value)[:3], transparency)
         if generate_legend:
             legend = {
-                "min_col": scalar_map.to_rgba(min_val)[:3] + (transparency,),
-                "max_col": scalar_map.to_rgba(max_val)[:3] + (transparency,),
+                "min_col": (*scalar_map.to_rgba(min_val)[:3], transparency),
+                "max_col": (*scalar_map.to_rgba(max_val)[:3], transparency),
                 "min_val": min_val,
                 "max_val": max_val,
             }
@@ -264,12 +291,13 @@ def add_halo_to_node(
         - 'v_halo' (PropertyMap): Halo property map (only for the specific node).
         - 'v_halo_color' (PropertyMap): Halo colour as a property map (only for the specific node with halo).
     """
+    # Mark optional arg as used (reserved for sizing in draw layer)
+    _ = halo_size_factor
     # Initialize halo property
     v_halo = g.new_vertex_property("bool")
     v_halo_color = g.new_vertex_property("vector<double>")
 
     for v in g.vertices():
-        # print(v)
         if v == node:  # Add a halo to the specified node
             v_halo[v] = True
             v_halo_color[v] = halo_color
@@ -333,7 +361,7 @@ def add_halos_to_nodes(
         v_halo[v] = True
         v_halo_color[v] = color
 
-    # Attach to the base graph’s vp (and also to the view’s vp for convenience)
+    # Attach to the base graph's vp (and also to the view's vp for convenience)
     base.vp[prop_name_halo] = v_halo
     base.vp[prop_name_color] = v_halo_color
     if isinstance(g, GraphView):
@@ -344,7 +372,12 @@ def add_halos_to_nodes(
 
 
 def set_node_sizes_and_text_by_depth(
-    g, root, max_size=20, min_size=5, max_text_size=15, min_text_size=8
+    g,
+    root,
+    max_size=20,
+    min_size=5,
+    max_text_size=15,
+    min_text_size=8,
 ):
     """
     Set node sizes and text sizes based on their depth in the tree.
@@ -390,8 +423,8 @@ def get_legend(
     verbose=False,
     mode=None,
     custom_cmap=None,
-    title: str = None,
-    save_filename: str = None,
+    title: str | None = None,
+    save_filename: str | None = None,
 ):
     """
     Generates a legend for graph coloring or shaping.
@@ -431,33 +464,6 @@ def get_legend(
     import matplotlib.pyplot as plt
 
     # --- shape helpers ----------------------------------------------------
-    SHAPE_ALIASES = {
-        "circle": "o",
-        "o": "o",
-        "square": "s",
-        "s": "s",
-        "triangle": "^",
-        "triangle_up": "^",
-        "^": "^",
-        "triangle_down": "v",
-        "v": "v",
-        "diamond": "D",
-        "thin_diamond": "d",
-        "d": "d",
-        "D": "D",
-        "pentagon": "p",
-        "p": "p",
-        "hexagon": "h",
-        "hexagon1": "h",
-        "hex": "h",
-        "h": "h",
-        "star": "*",
-        "*": "*",
-        "plus": "+",
-        "+": "+",
-        "x": "x",
-    }
-
     def _looks_like_shape_dict(d):
         # Treat as shape legend if values are strings mapping to a known marker.
         if not isinstance(d, dict) or not d:
@@ -475,7 +481,7 @@ def get_legend(
             max_val = source.get("max_val")
             if min_val is None or max_val is None:
                 raise ValueError(
-                    "Continuous legend dictionary must contain 'min_val' and 'max_val'."
+                    "Continuous legend dictionary must contain 'min_val' and 'max_val'.",
                 )
             cmap = custom_cmap if custom_cmap is not None else cm.viridis
             norm = plt.Normalize(vmin=min_val, vmax=max_val)
@@ -585,7 +591,7 @@ def get_legend(
         plt.show()
         return
 
-    elif mode == "categorical":
+    if mode == "categorical":
         # Build a categorical COLOR legend from graph data
         if hasattr(source, "vp") and prop in source.vp:
             categories = list(set(source.vp[prop]))
@@ -615,8 +621,7 @@ def get_legend(
         plt.show()
         return
 
-    else:
-        raise ValueError("Mode must be either 'continuous' or 'categorical'.")
+    raise ValueError("Mode must be either 'continuous' or 'categorical'.")
 
 
 def color_edges(
@@ -672,9 +677,9 @@ def color_edges(
         color_map = {cat: colormap(i % colormap_len) for i, cat in enumerate(categories)}
         for e in g.edges():
             category = g.ep[prop_name][e]
-            e_color[e] = color_map[category][:3] + (1.0,)
+            e_color[e] = (*color_map[category][:3], 1.0)
         if generate_legend:
-            legend = {cat: color_map[cat][:3] + (1.0,) for cat in categories}
+            legend = {cat: (*color_map[cat][:3], 1.0) for cat in categories}
 
     elif method == "continuous":
         values = [float(g.ep[prop_name][e]) for e in g.edges()]
@@ -688,7 +693,7 @@ def color_edges(
         scalar_map = cm.ScalarMappable(norm=norm, cmap=colormap)
         for e in g.edges():
             value = float(g.ep[prop_name][e])
-            e_color[e] = scalar_map.to_rgba(value)[:3] + (1.0,)
+            e_color[e] = (*scalar_map.to_rgba(value)[:3], 1.0)
         if generate_legend:
             legend = {
                 "min_col": scalar_map.to_rgba(min_val),
@@ -816,8 +821,7 @@ def bipartite_ordered_layout(
         indices = [left_index[w] for w in v.all_neighbors() if w in left_index]
         if indices:
             return sum(indices) / len(indices)
-        else:
-            return 0
+        return 0
 
     # Sort the right side by the average neighbor index on the left
     right_nodes.sort(key=avg_left_index)
@@ -858,7 +862,7 @@ def load_or_compute_layout(g, filename, override=False, inject=None):
     # partial-pair guards (bad config should raise, not fall back)
     if has_layer_decoded ^ has_node_decoded:
         raise ValueError(
-            "Graph has only one decoded key; need both 'layer_decoded' and 'node_id_decoded'."
+            "Graph has only one decoded key; need both 'layer_decoded' and 'node_id_decoded'.",
         )
     if has_layer_hash ^ has_node_hash:
         raise ValueError("Graph has only one hash key; need both 'layer_hash' and 'node_id_hash'.")
@@ -902,7 +906,7 @@ def load_or_compute_layout(g, filename, override=False, inject=None):
         return pos
 
     # --- 3) try load-from-disk (unless override) ---
-    if os.path.exists(filename) and not override:
+    if Path(filename).exists() and not override:
         df = pd.read_csv(filename, sep="\t")
 
         # Detect the file's key scheme
@@ -919,7 +923,7 @@ def load_or_compute_layout(g, filename, override=False, inject=None):
             raise ValueError(
                 "TSV missing any recognized key columns: "
                 "decoded (layer_decoded,node_id_decoded), "
-                "hash (layer_hash,node_id_hash), or v_int."
+                "hash (layer_hash,node_id_hash), or v_int.",
             )
 
         # Normalizers so types match on both sides
@@ -986,7 +990,7 @@ def load_or_compute_layout(g, filename, override=False, inject=None):
                 key = norm_graph_vertex(v, file_mode)
                 if key not in lookup:
                     raise ValueError(
-                        f"No layout in TSV for vertex key {key} (keys are {file_keys})"
+                        f"No layout in TSV for vertex key {key} (keys are {file_keys})",
                     )
                 row = lookup[key]
                 pos[v] = (float(row["x"]), float(row["y"]))
@@ -1080,7 +1084,7 @@ def prop_to_size(g, prop, mi=1, ma=8, power=1, transform_func=None, mode="v"):
         Power to apply for scaling.
     transform_func : callable, optional
         A function to apply to the property values before scaling. This function should support vectorized operations.
-        If it doesn’t, np.vectorize will be used as a fallback.
+        If it doesn't, np.vectorize will be used as a fallback.
     mode : str, optional
         Specifies whether the property is a vertex property ('v') or an edge property ('e'). Defaults to 'v'.
 

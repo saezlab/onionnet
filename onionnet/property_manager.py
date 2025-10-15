@@ -135,15 +135,20 @@ class OnionNetPropertyManager:
                 val = mapping.get(val, f"Unknown ({val})")
             props[p] = val
         props["decoded_layer"] = self.core.layer_code_to_name.get(
-            layer_code, f"Unknown ({layer_code})"
+            layer_code,
+            f"Unknown ({layer_code})",
         )
         props["decoded_node_id"] = self.core.node_id_int_to_str.get(
-            node_id_int, f"Unknown ({node_id_int})"
+            node_id_int,
+            f"Unknown ({node_id_int})",
         )
         return props
 
     def view_node_properties_by_names(
-        self, layer_name: str, node_id_str: str, verbose: bool = False
+        self,
+        layer_name: str,
+        node_id_str: str,
+        verbose: bool = False,
     ) -> dict[str, Any]:
         """
         View properties for a vertex using its human-readable layer and node identifier.
@@ -160,7 +165,8 @@ class OnionNetPropertyManager:
             If verbose is True, prints the properties to the console.
         """
         props = self.view_node_properties(
-            self.core.layer_name_to_code[layer_name], self.core.node_id_str_to_int[node_id_str]
+            self.core.layer_name_to_code[layer_name],
+            self.core.node_id_str_to_int[node_id_str],
         )
         if verbose:
             print(f"Properties for ({layer_name}, {node_id_str}):")
@@ -195,7 +201,7 @@ class OnionNetPropertyManager:
         self,
         encoded_prop_type: str,  # 'v' for vertex, 'e' for edge
         encoded_prop_name: str,
-        new_prop_name: str = None,  # Defaults to f"{encoded_prop_name}_decoded"
+        new_prop_name: str | None = None,  # Defaults to f"{encoded_prop_name}_decoded"
         mapping_dict: dict[int, str] | None = None,  # Defaults based on core's mappings
         default_label: str = "Unknown",
         g: Graph = None,
@@ -238,7 +244,7 @@ class OnionNetPropertyManager:
                 and encoded_prop_name in self.core.edge_categorical_mappings
             ):
                 raise ValueError(
-                    f"'{encoded_prop_name}' looks like an EDGE property; cannot decode it as a VERTEX property."
+                    f"'{encoded_prop_name}' looks like an EDGE property; cannot decode it as a VERTEX property.",
                 )
         else:  # 'e'
             if (
@@ -246,7 +252,7 @@ class OnionNetPropertyManager:
                 and encoded_prop_name in self.core.vertex_categorical_mappings
             ):
                 raise ValueError(
-                    f"'{encoded_prop_name}' looks like a VERTEX property; cannot decode it as an EDGE property."
+                    f"'{encoded_prop_name}' looks like a VERTEX property; cannot decode it as an EDGE property.",
                 )
 
         # Ensure the encoded property exists on the requested dimension
@@ -264,7 +270,7 @@ class OnionNetPropertyManager:
                 if encoded_prop_name not in self.core.vertex_categorical_mappings:
                     raise ValueError(
                         f"Vertex property '{encoded_prop_name}' is not registered as categorical; "
-                        f"provide mapping_dict to decode."
+                        f"provide mapping_dict to decode.",
                     )
                 mapping_dict = self.core.vertex_categorical_mappings[encoded_prop_name][
                     "int_to_str"
@@ -276,7 +282,7 @@ class OnionNetPropertyManager:
                     if encoded_prop_name not in self.core.edge_categorical_mappings:
                         raise ValueError(
                             f"Edge property '{encoded_prop_name}' is not registered as categorical; "
-                            f"provide mapping_dict to decode."
+                            f"provide mapping_dict to decode.",
                         )
                     mapping_dict = self.core.edge_categorical_mappings[encoded_prop_name][
                         "int_to_str"
@@ -286,7 +292,7 @@ class OnionNetPropertyManager:
         def vectorized_labels(int_array: np.ndarray) -> np.ndarray:
             # simple + robust: vectorize mapping with default fallback
             return np.vectorize(lambda x: mapping_dict.get(int(x), default_label), otypes=[object])(
-                int_array
+                int_array,
             )
 
         if encoded_prop_type == "e":
@@ -332,7 +338,8 @@ class OnionNetPropertyManager:
             else:
                 enc = active.vp[encoded_prop_name].a.astype(int)
                 labels_all = np.vectorize(
-                    lambda x: mapping_dict.get(x, default_label), otypes=[object]
+                    lambda x: mapping_dict.get(x, default_label),
+                    otypes=[object],
                 )(enc)
                 for v in active.vertices():
                     decoded[v] = labels_all[int(v)]

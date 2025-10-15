@@ -85,7 +85,11 @@ def test_color_nodes_categorical_and_legend(cat_graph):
     color_nodes categorical: correct RGBA, legend keys = categories.
     """
     res = color_nodes(
-        cat_graph, "grp", method="categorical", generate_legend=True, transparency=0.8
+        cat_graph,
+        "grp",
+        method="categorical",
+        generate_legend=True,
+        transparency=0.8,
     )
     vcol = res["v_color"]
     legend = res["legend_node_color"]
@@ -101,7 +105,11 @@ def test_color_nodes_continuous_zero_centred_and_legend(cat_graph):
     color_nodes continuous: zero-centred normalization and legend contents.
     """
     res = color_nodes(
-        cat_graph, "val", method="continuous", zero_centred=True, generate_legend=True
+        cat_graph,
+        "val",
+        method="continuous",
+        zero_centred=True,
+        generate_legend=True,
     )
     legend = res["legend_node_color"]
     # legend must include min_val==-max_val symmetry
@@ -200,7 +208,12 @@ def test_set_node_sizes_and_text_by_depth_chain():
     g.add_edge(a, b)
     g.add_edge(b, c)
     v_size, v_text = set_node_sizes_and_text_by_depth(
-        g, root=a, max_size=10, min_size=4, max_text_size=12, min_text_size=6
+        g,
+        root=a,
+        max_size=10,
+        min_size=4,
+        max_text_size=12,
+        min_text_size=6,
     )
     # root depth=0 => largest size
     assert v_size[a] > v_size[b] > v_size[c]
@@ -211,6 +224,8 @@ def test_set_node_sizes_and_text_by_depth_chain():
 
 
 def test_get_legend_from_dicts_and_graph(tmp_path, capsys, cat_graph):
+    _ = tmp_path
+    _ = capsys
     """
     get_legend handles:
       - categorical dict
@@ -237,10 +252,12 @@ def test_get_legend_from_dicts_and_graph(tmp_path, capsys, cat_graph):
     # Create a headless figure/axes and draw a dummy image so colorbar() has
     # an “artist” to attach to.
     fig, ax = plt.subplots()
-    # Dummy 2×1 image spanning the full colormap range
+    # Dummy 2x1 image spanning the full colormap range
     data = np.linspace(0, 1, 2).reshape(1, 2)
     ax.imshow(
-        data, cmap="viridis", norm=plt.Normalize(0, float(len(list(cat_graph.vertices()))) - 1)
+        data,
+        cmap="viridis",
+        norm=plt.Normalize(0, float(len(list(cat_graph.vertices()))) - 1),
     )
     # Now get_legend can successfully call plt.colorbar()
     get_legend(cat_graph, prop="num", mode="continuous")
@@ -272,7 +289,11 @@ def test_color_edges_categorical_and_continuous(edge_graph):
     assert set(res_cat["legend_edge_color"].keys()) == {5, 10}
     # continuous zero-centred
     res_cont = color_edges(
-        edge_graph, "w", method="continuous", zero_centred=True, generate_legend=True
+        edge_graph,
+        "w",
+        method="continuous",
+        zero_centred=True,
+        generate_legend=True,
     )
     assert "min_val" in res_cont["legend_edge_color"]
 
@@ -316,7 +337,6 @@ def test_layout_by_layer_degenerate_raises(layered_graph):
 @pytest.fixture
 def bipartite_graph():
     g = gt.Graph(directed=False)
-    # left=0,1; right=2,3
     for _ in range(4):
         g.add_vertex()
     pm = g.new_vertex_property("string")
@@ -334,7 +354,11 @@ def test_bipartite_ordered_layout_positions(bipartite_graph):
     bipartite_ordered_layout should set x=0 for L, x=1 for R, y in sorted order.
     """
     pos = bipartite_ordered_layout(
-        bipartite_graph, left_val="L", right_val="R", horizontal_spacing=2.0, vertical_spacing=5.0
+        bipartite_graph,
+        left_val="L",
+        right_val="R",
+        horizontal_spacing=2.0,
+        vertical_spacing=5.0,
     )
     for v in bipartite_graph.vertices():
         layer = bipartite_graph.vp["layer_decoded"][v]
