@@ -1156,7 +1156,6 @@ def test__bfs_traversal_modes_and_error():
 def test_filter_view_by_property_vertices_and_edges():
     core = make_simple_core()
     s = OnionNetSearcher(core)
-    g = core.graph
     gv_v = s.filter_view_by_property("val", 2, comparison=">=", dim="v", prune_isolated=False)
     vs = {int(v) for v in gv_v.vertices()}
     assert vs == {2, 3}

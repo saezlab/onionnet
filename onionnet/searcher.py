@@ -11,8 +11,8 @@ from .core import OnionNetGraph
 from .property_manager import OnionNetPropertyManager
 
 """
-This module defines the OnionNetSearcher class, which provides functionality for graph traversal and subgraph extraction 
-within an OnionNetGraph. It includes methods for computing shortest path related properties, performing breadth-first search 
+This module defines the OnionNetSearcher class, which provides functionality for graph traversal and subgraph extraction
+within an OnionNetGraph. It includes methods for computing shortest path related properties, performing breadth-first search
 traversals, and generating filtered graph views based on various criteria.
 """
 
@@ -309,7 +309,7 @@ class OnionNetSearcher:
         try:
             start_vertex = g.vertex(start_node_idx)
         except Exception as e:
-            raise ValueError(f"Invalid start index {start_node_idx}: {e}")
+            raise ValueError(f"Invalid start index {start_node_idx}: {e}") from e
 
         if direction == "any":
             # create an undirected view of g
@@ -662,7 +662,7 @@ class OnionNetSearcher:
             c1 = self.core.layer_name_to_code[source_label]
             c2 = self.core.layer_name_to_code[target_label]
         except KeyError as e:
-            raise KeyError(f"Unknown layer name: {e.args[0]}")
+            raise KeyError(f"Unknown layer name: {e.args[0]}") from e
 
         # 2) pull out vertex-layer array and edges *with internal edge index*
         lh_arr = g.vp["layer_hash"].a

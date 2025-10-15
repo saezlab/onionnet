@@ -841,7 +841,7 @@ def test_grow_onion_idempotent(builder_and_core, toy_nodes, toy_edges):
     assert core.graph.num_vertices() == before_nodes * 2
     assert core.graph.num_edges() == before_edges * 2
     # original mapping intact
-    for (lay, nid), idx in core.custom_id_to_vertex_index.items():
+    for (_lay, _nid), idx in core.custom_id_to_vertex_index.items():
         assert isinstance(idx, int)
 
 
@@ -922,7 +922,7 @@ def test_layer_key_normalization(builder_and_core):
     df = pd.DataFrame({"node_id": ["X", "Y", "Z"], "layer": ["1", " 1", "1 "]})
     bldr.add_vertices_from_dataframe(df, "node_id", "layer", drop_na=False)
     # Layers differing only by whitespace are treated as distinct
-    codes = {core._map_layer(l) for l in ["1", " 1", "1 "]}
+    codes = {core._map_layer(layer) for layer in ["1", " 1", "1 "]}
     assert len(codes) == 3
 
 

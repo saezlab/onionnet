@@ -667,7 +667,6 @@ def test_decode_edge_missing_codes_default_label(pm_and_graph_simple):
 def test_decode_edge_wrong_dimension_error(pm_and_graph_simple):
     # Trying to decode an edge property as a vertex property should raise a clear error
     core, pm = pm_and_graph_simple
-    df = pd.DataFrame({"lbl": ["foo", "bar", "baz"]})
     # Because 'lbl' exists only as an edge prop, decoding it as vertex should either KeyError or ValueError;
     # we expect the implementation to catch dimension mismatch and raise ValueError.
     with pytest.raises((ValueError, KeyError)):
@@ -1156,7 +1155,7 @@ def test_whitespace_layer_current_behavior(builder_and_core):
     bldr, core = builder_and_core
     df = pd.DataFrame({"node_id": ["X", "Y", "Z"], "layer": ["1", " 1", "1 "]})
     bldr.add_vertices_from_dataframe(df, "node_id", "layer", drop_na=False)
-    codes = {core._map_layer(l) for l in ["1", " 1", "1 "]}
+    codes = {core._map_layer(layer) for layer in ["1", " 1", "1 "]}
     # Expect distinct treatment of whitespace variants
     assert len(codes) == 3
 
@@ -1279,7 +1278,7 @@ def test_high_cardinality_edge_decode(builder_and_core):
     N = 3_000  # tested up to 300_000 previously
     labels = [f"lbl_{i}" for i in range(N)]
     edge_rows = []
-    for i, lbl in enumerate(labels):
+    for _i, lbl in enumerate(labels):
         edge_rows.append(
             {
                 "source_id": "A",

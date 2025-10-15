@@ -69,10 +69,10 @@ def cat_graph():
     Simple 3-node graph with a categorical prop 'grp' and numeric prop 'val'.
     """
     g = gt.Graph(directed=False)
-    v0, v1, v2 = g.add_vertex(), g.add_vertex(), g.add_vertex()
+    _, _, _ = g.add_vertex(), g.add_vertex(), g.add_vertex()
     pm_cat = g.new_vertex_property("string")
     pm_val = g.new_vertex_property("double")
-    for i, v in enumerate(g.vertices()):
+    for _i, v in enumerate(g.vertices()):
         pm_cat[v] = ["A", "B", "A"][int(v)]
         pm_val[v] = float([0.0, 0.5, 1.0][int(v)])
     g.vp["grp"] = pm_cat
@@ -108,7 +108,6 @@ def test_color_nodes_continuous_zero_centred_and_legend(cat_graph):
     assert pytest.approx(legend["min_val"] + legend["max_val"]) == 0.0
     # v_color respects range
     vcol = res["v_color"]
-    vals = [float(cat_graph.vp["val"][v]) for v in cat_graph.vertices()]
     for v in cat_graph.vertices():
         assert len(vcol[v]) == 4
 
@@ -354,7 +353,7 @@ def test_load_or_compute_layout_inject_and_load(tmp_path):
     load_or_compute_layout with inject builds and saves TSV, then reload reads it back.
     """
     core = OnionNetGraph()
-    b = gt.GraphView  # dummy to import
+    _ = gt.GraphView  # dummy to import
     # build a 2-node OnionNetGraph
     bldr = __import__("onionnet.builder").builder.OnionNetBuilder(core)
     df = pd.DataFrame({"node_id": ["A", "B"], "layer": ["0", "0"]})
@@ -574,7 +573,7 @@ def test_compute_and_load_vs_override(tmp_tsv):
     # First run writes via sfdp_layout
     g = make_simple_graph(3)
     pos1 = load_or_compute_layout(g, tmp_tsv, override=False, inject=None)
-    df1 = pd.read_csv(tmp_tsv, sep="\t")
+    _ = pd.read_csv(tmp_tsv, sep="\t")
     # Second run without override should load the same positions
     pos2 = load_or_compute_layout(g, tmp_tsv, override=False, inject=None)
     coords1 = [tuple(pos1[v]) for v in g.vertices()]
@@ -608,7 +607,7 @@ def test_v_int_only_branch(tmp_tsv):
     del g.vp["node_id_hash"]
 
     # Compute → writes v_int key
-    pos = load_or_compute_layout(g, tmp_tsv)
+    load_or_compute_layout(g, tmp_tsv)
     df = pd.read_csv(tmp_tsv, sep="\t")
     assert "v_int" in df.columns and "x" in df.columns and "y" in df.columns
 

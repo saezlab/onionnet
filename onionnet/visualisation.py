@@ -17,8 +17,8 @@ import numpy as np
 import pandas as pd
 
 """
-This module provides visualization utilities for the OnionNet project. It includes functions for generating graph layouts, 
-assigning colors and shapes to nodes and edges based on their properties, drawing weight propagation graphs, and creating legends. 
+This module provides visualization utilities for the OnionNet project. It includes functions for generating graph layouts,
+assigning colors and shapes to nodes and edges based on their properties, drawing weight propagation graphs, and creating legends.
 These tools enable effective visual analysis and presentation of complex network data within an OnionNetGraph.
 """
 
@@ -150,7 +150,7 @@ def color_nodes(
         values = [float(g.vp[prop_name][v]) for v in g.vertices()]
         min_val, max_val = min(values), max(values)
         # If the user wants, they can set the middle of the bar based on the max absolute value
-        if zero_centred == True:
+        if zero_centred:
             abs_max = max(abs(min_val), abs(max_val))
             min_val = -abs_max
             max_val = abs_max
@@ -975,12 +975,14 @@ def load_or_compute_layout(g, filename, override=False, inject=None):
         if extra_in_file:
             warnings.warn(
                 f"{len(extra_in_file)} keys in TSV not in graph (showing up to 5): "
-                f"{list(extra_in_file)[:5]}"
+                f"{list(extra_in_file)[:5]}",
+                stacklevel=2,
             )
         if extra_in_graph:
             warnings.warn(
                 f"{len(extra_in_graph)} graph vertices missing in TSV (showing up to 5): "
-                f"{list(extra_in_graph)[:5]}"
+                f"{list(extra_in_graph)[:5]}",
+                stacklevel=2,
             )
 
         # Build the position map
@@ -1009,7 +1011,7 @@ def load_or_compute_layout(g, filename, override=False, inject=None):
     pos = sfdp_layout(g)
     # If we're overriding, apply a tiny deterministic offset to ensure a change vs. prior file
     if override:
-        for i, v in enumerate(g.vertices()):
+        for _i, v in enumerate(g.vertices()):
             px, py = pos[v]
             pos[v] = (float(px) + 1e-3, float(py))
     _write_df(pos)

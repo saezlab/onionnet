@@ -179,7 +179,7 @@ class OnionNetBuilder:
             if layer_name is not None and node_name is not None:
                 node_pairs.add((str(layer_name), str(node_name)))
         keep_rows = []
-        for idx, row in df_e_clean.iterrows():
+        for _idx, row in df_e_clean.iterrows():
             s_pair = (str(row[edge_source_layer_col]), str(row[edge_source_id_col]))
             t_pair = (str(row[edge_target_layer_col]), str(row[edge_target_id_col]))
             if s_pair in node_pairs and t_pair in node_pairs:
@@ -307,7 +307,7 @@ class OnionNetBuilder:
             ndup = df.duplicated(subset=[id_col, layer_col]).sum()
             if ndup:
                 warnings.warn(
-                    f"{ndup} duplicate node rows found but drop_duplicates=False", UserWarning
+                    f"{ndup} duplicate node rows found but drop_duplicates=False", UserWarning, stacklevel=2
                 )
         # duplicate removal
         if drop_duplicates:
@@ -492,7 +492,8 @@ class OnionNetBuilder:
             ).sum()
             if ndup:
                 warnings.warn(
-                    f"{ndup} duplicate edge rows found but drop_duplicates=False", UserWarning
+                    f"{ndup} duplicate edge rows found but drop_duplicates=False", UserWarning,
+                    stacklevel=2
                 )
         # cast keys
         df[source_id_col] = df[source_id_col].astype(str)
@@ -513,7 +514,8 @@ class OnionNetBuilder:
         ]
         if not valid:
             warnings.warn(
-                "No valid edges to add: all edges reference missing vertices.", UserWarning
+                "No valid edges to add: all edges reference missing vertices.", UserWarning,
+                stacklevel=2,
             )
             return
         # If drop_duplicates requested, collapse duplicates within this batch,
