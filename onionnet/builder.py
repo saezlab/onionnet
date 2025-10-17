@@ -34,7 +34,8 @@ class OnionNetBuilder:
 
     Attributes
     ----------
-        core (OnionNetGraph): The core graph object where nodes and edges will be added.
+        core : OnionNetGraph
+            The core graph object where nodes and edges will be added.
     """
 
     def __init__(self, core: OnionNetGraph):
@@ -43,7 +44,8 @@ class OnionNetBuilder:
 
         Parameters
         ----------
-            core (OnionNetGraph): The core graph object used for adding vertices and edges.
+            core : OnionNetGraph
+                The core graph object used for adding vertices and edges.
         """
         self.core = core
         self._stats = {}
@@ -70,33 +72,49 @@ class OnionNetBuilder:
         """
         Ingest node and edge DataFrames into the graph.
 
-        This method validates the input DataFrames, and optionally displays
-        a snippet of the data. By default, it then performs NA-dropping, duplicate removal,
-        filters invalid edges, and finally adds vertices and edges to the graph.
-        A summary of counts at each step is recorded and can be printed.
+        This method validates the input DataFrames, optionally displays a snippet of the data,
+        performs NA-dropping, duplicate removal, filters invalid edges, and finally adds
+        vertices and edges to the graph. A summary of counts at each step is recorded and can be printed.
 
         Parameters
         ----------
-            df_nodes (pd.DataFrame): DataFrame containing node information.
-            df_edges (pd.DataFrame): DataFrame containing edge information.
-            node_prop_cols (List[str], optional): List of node property column names. Defaults to None.
-            edge_prop_cols (List[str], optional): List of edge property column names. Defaults to None.
-            drop_na (bool, optional): Flag to drop rows with missing key values. Defaults to False.
-            drop_duplicates (bool, optional): Flag to remove duplicate entries. Note this applies to _both_ nodes and edges. Defaults to False.
-            use_display (bool, optional): Flag to display a snippet of data using IPython display if available. Defaults to False.
-            node_id_col (str, optional): Column name for node identifier. Defaults to 'node_id'.
-            node_layer_col (str, optional): Column name for node layer information. Defaults to 'layer'.
-            edge_source_id_col (str, optional): Column name for edge source identifier. Defaults to 'source_id'.
-            edge_source_layer_col (str, optional): Column name for edge source layer information. Defaults to 'source_layer'.
-            edge_target_id_col (str, optional): Column name for edge target identifier. Defaults to 'target_id'.
-            edge_target_layer_col (str, optional): Column name for edge target layer information. Defaults to 'target_layer'.
-            vertex_property_types (dict, optional): Mapping of vertex property types. Defaults to None.
-            edge_property_types (dict, optional): Mapping of edge property types. Defaults to None.
-            verbose (bool, optional): Prints summary of graph creation. Defaults to True.
+        df_nodes : pandas.DataFrame
+            DataFrame containing node information.
+        df_edges : pandas.DataFrame
+            DataFrame containing edge information.
+        node_prop_cols : list of str, optional
+            List of node property column names. Defaults to None.
+        edge_prop_cols : list of str, optional
+            List of edge property column names. Defaults to None.
+        drop_na : bool, optional
+            If True, drop rows with missing key values. Defaults to True.
+        drop_duplicates : bool, optional
+            If True, remove duplicate entries for both nodes and edges. Defaults to True.
+        use_display : bool, optional
+            If True, display a snippet of data using IPython display if available. Defaults to False.
+        node_id_col : str, optional
+            Column name for node identifier. Defaults to 'node_id'.
+        node_layer_col : str, optional
+            Column name for node layer information. Defaults to 'layer'.
+        edge_source_id_col : str, optional
+            Column name for edge source identifier. Defaults to 'source_id'.
+        edge_source_layer_col : str, optional
+            Column name for edge source layer information. Defaults to 'source_layer'.
+        edge_target_id_col : str, optional
+            Column name for edge target identifier. Defaults to 'target_id'.
+        edge_target_layer_col : str, optional
+            Column name for edge target layer information. Defaults to 'target_layer'.
+        vertex_property_types : dict, optional
+            Mapping of vertex property types. Defaults to None.
+        edge_property_types : dict, optional
+            Mapping of edge property types. Defaults to None.
+        verbose : bool, optional
+            If True, prints summary of graph creation. Defaults to True.
 
         Raises
         ------
-            ValueError: If required columns are missing in the node or edge DataFrames.
+        ValueError
+            If required columns are missing in the node or edge DataFrames.
         """
         # first, validate that all required columns exist
         if node_prop_cols is None:
@@ -285,14 +303,22 @@ class OnionNetBuilder:
 
         Parameters
         ----------
-            df_nodes (pd.DataFrame): DataFrame containing node data.
-            id_col (str): Name of the column containing node identifiers.
-            layer_col (str): Name of the column containing node layer information.
-            property_cols (List[str], optional): List of additional node property columns.
-            drop_na (bool): Drop rows with missing id/layer if True; else error on NA.
-            drop_duplicates (bool): Drop duplicate (id,layer) rows if True.
-            string_override (bool): Treat all props as categorical if True.
-            property_types (dict): Explicit types for properties.
+        df_nodes : pandas.DataFrame
+            DataFrame containing node data.
+        id_col : str
+            Column name for the node identifier.
+        layer_col : str
+            Column name for the node layer.
+        property_cols : list of str | None, optional
+            List of additional node property columns to ingest and attach.
+        drop_na : bool, optional
+            Drop rows with missing id/layer if True; else error on NA. Default True.
+        drop_duplicates : bool, optional
+            Drop duplicate `(id, layer)` rows if True. Default True.
+        string_override : bool, optional
+            Treat all listed props as categorical if True. Default False.
+        property_types : dict | None, optional
+            Explicit property types per column. Overrides inference.
         """
         # check for column name conflicts with internal keys
         internal = {"layer_hash", "node_id_hash", "v_int"}
@@ -458,14 +484,29 @@ class OnionNetBuilder:
 
         Parameters
         ----------
-            df_edges (pd.DataFrame): DataFrame containing edge data.
-            source_id_col, source_layer_col, target_id_col, target_layer_col: key columns.
-            property_cols (List[str], optional): List of edge property columns.
-            drop_na (bool): Drop rows with missing keys if True; else error on NA.
-            drop_duplicates (bool): Drop duplicate edge pairs (source,layer,target,layer rows) if True, including double self loops.
-            string_override (bool): Treat all props as categorical.
-            property_types (dict): Explicit types for properties.
-            consider_props_in_duplicate (bool): If True, duplicates are defined by endpoints and the listed property columns (so two nodes could be from A1->A2, but with different properties or property values), otherwise only by endpoints.
+        df_edges : pandas.DataFrame
+            DataFrame containing edge data.
+        source_id_col : str
+            Column name for the source node identifier.
+        source_layer_col : str
+            Column name for the source layer.
+        target_id_col : str
+            Column name for the target node identifier.
+        target_layer_col : str
+            Column name for the target layer.
+        property_cols : list of str | None, optional
+            List of edge property column names to ingest and attach.
+        drop_na : bool, optional
+            Drop rows with missing keys if True; else error on NA. Default True.
+        drop_duplicates : bool, optional
+            Drop duplicate edge rows `(source, layer, target, layer)` if True, including double self-loops. Default True.
+        string_override : bool, optional
+            Treat all listed props as categorical (string-like) if True. Default False.
+        property_types : dict | None, optional
+            Explicit property types per column (e.g., `{"w": "int"}`). Overrides inference.
+        consider_props_in_duplicate : bool, optional
+            If True, duplicates are defined by endpoints plus the listed property columns
+            (so A1->A2 with different prop values are kept as separate edges). If False, only endpoints define duplicates.
         """
         # if there are literally no rows to add, bail out immediately
         if df_edges.shape[0] == 0:

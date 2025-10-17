@@ -17,7 +17,6 @@ extensions = [
     "sphinx.ext.napoleon",  # NumPy/Google style
     "sphinx.ext.autosummary",  # generate API tables
     "sphinx_copybutton",  # “copy” buttons on code blocks
-    "sphinx_autodoc_typehints",  # show Python 3 type hints
     "sphinx_tabs.tabs",  # tabbed content
     "sphinx_design",  # cards, grids, dropdowns
     "sphinx.ext.intersphinx",  # links to external docs
@@ -29,7 +28,11 @@ extensions = [
 
 # Automatically create summaries for modules
 autosummary_generate = True
-autodoc_typehints = "description"
+# Let NumPy-style docstrings drive parameter docs; avoid duplicating types
+autodoc_typehints = "none"
+# Prefer NumPy-style parsing (we already write "Parameters"/"Returns" blocks)
+napoleon_google_docstring = True
+napoleon_numpy_docstring = True
 autodoc_member_order = "groupwise"
 
 # MyST-Parser settings (for Markdown)
@@ -51,6 +54,7 @@ intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
     "pandas": ("https://pandas.pydata.org/docs/", None),
+    "graph-tool": ("https://graph-tool.skewed.de/static/docs/stable/", None),
 }
 
 templates_path = ["_templates"]

@@ -1,4 +1,8 @@
-"""Visualization utilities for OnionNet graphs."""
+"""Visualization utilities for OnionNet graphs.
+
+Helpers to derive layouts, assign colors and shapes, annotate halos, and
+draw legends for visual analysis of OnionNet graphs.
+"""
 
 from __future__ import annotations
 
@@ -45,11 +49,7 @@ SHAPE_ALIASES = {
     "x": "x",
 }
 
-"""
-This module provides visualization utilities for the OnionNet project. It includes functions for generating graph layouts,
-assigning colors and shapes to nodes and edges based on their properties, drawing weight propagation graphs, and creating legends.
-These tools enable effective visual analysis and presentation of complex network data within an OnionNetGraph.
-"""
+# (former duplicate module description removed to keep a single module docstring)
 
 #########################################
 # Visualisation: Graph Layout and Styling
@@ -68,7 +68,7 @@ def flatten_properties(nested_properties: list[Any]) -> list[str]:
 
     Returns
     -------
-    List[str]
+    list of str
         A flattened list of properties, with duplicates removed.
     """
     flat_list = []
@@ -128,24 +128,33 @@ def color_nodes(
 
     Parameters
     ----------
-    - g (Graph): The graph object where nodes are styled.
-    - prop_name (str): The name of the vertex property used to determine colors.
-    - method (str):
-        'categorical': assigns distinct colors for each unique category in the property.
-        'continuous' : uses a color scale.
-        'boolean'    : uses red if the property is True, grey if False.
-    - generate_legend (bool): If True, generates a legend dictionary mapping categories to colors.
-    - custom_colormap (Colormap or None): A custom matplotlib colormap for continuous values.
-    - custom_color_dict (dict or None): A user-defined dictionary mapping property values to colors.
-    - zero_centered (bool): If True (and method is 'continuous'), adjusts the normalization range so that
-          zero is centered (i.e. using symmetric bounds [-abs(max_val), abs(max_val)]). Defaults to False.
-    - transparency (float): Transparency level for the colors (0.0 to 1.0). Default is 1.0 (fully opaque).
+    g : graph_tool.Graph
+        The graph object where nodes are styled.
+    prop_name : str
+        The name of the vertex property used to determine colors.
+    method : str
+        One of {'categorical', 'continuous', 'boolean'}.
+        - 'categorical': assigns distinct colors for each unique category in the property.
+        - 'continuous' : uses a color scale.
+        - 'boolean'    : uses red if the property is True, grey if False.
+    generate_legend : bool, optional
+        If True, generates a legend dictionary mapping categories to colors.
+    custom_colormap : Colormap | None, optional
+        Custom matplotlib colormap for continuous values.
+    custom_color_dict : dict | None, optional
+        User-defined mapping from property values to colors.
+    zero_centred : bool, optional
+        If True (and method is 'continuous'), adjusts the normalization range so that
+        zero is centered (i.e., using symmetric bounds [-abs(max_val), abs(max_val)]).
+    transparency : float, optional
+        Transparency level for the colors (0.0 to 1.0). Default is 1.0 (fully opaque).
 
     Returns
     -------
-    - result (dict): A dictionary containing:
-        - 'v_color' (PropertyMap): A vertex property map with RGBA color values.
-        - 'legend' (dict): A dictionary mapping categories to colors (if generate_legend=True).
+    dict
+        A dictionary containing:
+            - 'v_color': vertex PropertyMap with RGBA color values.
+            - 'legend': mapping from categories to colors (if generate_legend=True).
     """
     v_color = g.new_vertex_property("vector<double>")
     legend = {} if generate_legend else None
@@ -223,17 +232,25 @@ def shape_nodes(
 
     Parameters
     ----------
-    - g (Graph): The graph object where nodes are styled.
-    - prop_name (str): The name of the vertex property used to determine shapes.
-    - shape_method (str or None): If specified, assigns vertex shapes based on a property or method.
-    - generate_legend (bool): If True, generates a legend dictionary mapping categories to shapes.
-    - custom_shape_dict (dict or None): A user-defined dictionary mapping property values to shapes.
+    g : graph_tool.Graph
+        Graph whose nodes will be styled.
+    prop_name : str
+        Name of the vertex property used to determine shapes.
+    shape_method : str or None
+        If specified, assigns vertex shapes based on a property or method.
+        Supported: ``"categorical"``, ``"boolean"``.
+    generate_legend : bool, optional
+        If ``True``, also returns a legend mapping categories to shapes.
+    custom_shape_dict : dict or None, optional
+        Mapping from property values to shape strings. When provided, overrides
+        automatic assignment.
 
     Returns
     -------
-    - result (dict): A dictionary containing:
-        - 'v_shape' (PropertyMap): A vertex property map with shape values.
-        - 'legend' (dict): A dictionary mapping categories to shapes (if generate_legend=True).
+    dict
+        A dictionary with:
+            - ``v_shape``: vertex PropertyMap of shape strings
+            - ``legend_node_shape``: dict mapping category→shape (if requested)
     """
     v_shape = g.new_vertex_property("string")
     legend = {} if generate_legend else None
@@ -277,20 +294,25 @@ def add_halo_to_node(
     halo_size_factor=1.5,
 ):
     """
-    Add a halo to a specific node while styling the graph.
+    Add a halo highlight to a specific node.
 
     Parameters
     ----------
-    - g (Graph): The graph object.
-    - node (Vertex): The specific vertex requiring a halo.
-    - halo_color (tuple): RGBA color for the halo.
-    - halo_size_factor (float): Size of the halo relative to the node size.
+    g : graph_tool.Graph
+        Graph containing the node.
+    node : Vertex
+        Vertex to highlight.
+    halo_color : tuple, optional
+        RGBA color for the halo. Default is semi-transparent yellow.
+    halo_size_factor : float, optional
+        Size of the halo relative to the node size. Reserved for drawing layers.
 
     Returns
     -------
-    - result (dict): A dictionary containing:
-        - 'v_halo' (PropertyMap): Halo property map (only for the specific node).
-        - 'v_halo_color' (PropertyMap): Halo colour as a property map (only for the specific node with halo).
+    dict
+        A dictionary with:
+            - `v_halo: bool PropertyMap`
+            - `v_halo_color: vector<double> PropertyMap`
     """
     # Mark optional arg as used (reserved for sizing in draw layer)
     _ = halo_size_factor
@@ -321,7 +343,7 @@ def add_halos_to_nodes(
 
     Parameters
     ----------
-    g : Graph or GraphView
+    g : graph_tool.Graph or graph_tool.GraphView
         The graph you will draw.
     nodes : sequence of Vertex or int
         Vertices to highlight. (If you pass ints, they are treated as vertex indices.)
@@ -337,7 +359,9 @@ def add_halos_to_nodes(
     Returns
     -------
     dict
-        {"v_halo": halo_bool_map, "v_halo_color": halo_color_map}
+        A dictionary with:
+            - `v_halo: bool PropertyMap`
+            - `v_halo_color: vector<double> PropertyMap`
     """
     # Use the underlying base graph so property arrays line up correctly
     base = g
@@ -381,21 +405,27 @@ def set_node_sizes_and_text_by_depth(
     min_text_size=8,
 ):
     """
-    Set node sizes and text sizes based on their depth in the tree.
+    Set node sizes and text sizes based on depth in a tree.
 
     Parameters
     ----------
-    - g (Graph): The graph object.
-    - root (Vertex): The root vertex from which to calculate depths.
-    - max_size (int): Maximum size for inner nodes (closer to the root).
-    - min_size (int): Minimum size for outer nodes (further from the root).
-    - max_text_size (int): Maximum text size for inner nodes.
-    - min_text_size (int): Minimum text size for outer nodes.
+    g : graph_tool.Graph
+        Graph to style.
+    root : Vertex
+        Root vertex from which to compute undirected distances.
+    max_size : int, optional
+        Maximum size for inner nodes (closer to ``root``).
+    min_size : int, optional
+        Minimum size for outer nodes (further from ``root``).
+    max_text_size : int, optional
+        Maximum text size for inner nodes.
+    min_text_size : int, optional
+        Minimum text size for outer nodes.
 
     Returns
     -------
-    - v_size (PropertyMap): A vertex property map with sizes based on depth.
-    - v_text_size (PropertyMap): A vertex property map for text sizes based on depth.
+    tuple of (graph_tool.PropertyMap, graph_tool.PropertyMap)
+        A tuple ``(v_size, v_text_size)`` of PropertyMaps sized by depth.
     """
     # TODO - text_size seems currently buggy in cairo, might need to fix or go back to just node size
 
@@ -434,12 +464,12 @@ def get_legend(
 
     Parameters
     ----------
-    source : dict or graph
+    source : dict or graph_tool.Graph
         - If dict:
             * Continuous color dict: must contain 'min_col' and 'max_col' (and min_val/max_val).
             * Categorical color dict: {category -> color (rgba/hex/tuple)}.
             * Categorical shape dict: {category -> shape_name}, e.g. 'circle','triangle','square','pentagon', etc.
-        - If graph: a graph-tool Graph or GraphView that has vp/ep[prop].
+        - If Graph: a graph_tool.Graph or graph_tool.GraphView that has vp/ep[prop].
 
     prop : str or None
         Property name if `source` is a graph. Ignored for dict source.
@@ -641,23 +671,27 @@ def color_edges(
 
     Parameters
     ----------
-    g (Graph): The graph object where edges are styled.
-    prop_name (str): The name of the edge property used to determine colors.
-    method (str):
-        'categorical': assigns distinct colors for each unique category in the property.
-        'continuous': uses a color scale.
-        'boolean': uses red if the property is True, grey if False.
-    generate_legend (bool): If True, generates a legend dictionary mapping categories to colors.
-    custom_colormap (Colormap or None): A custom matplotlib colormap for continuous values.
-    custom_color_dict (dict or None): A user-defined dictionary mapping property values to colors.
-    zero_centred (bool): If True (and method is 'continuous'), adjusts the normalization range so that
-        zero is centered. Defaults to False.
+    g : Graph
+        The graph object where edges are styled.
+    prop_name : str
+        The name of the edge property used to determine colors.
+    method : str
+        One of {'categorical', 'continuous', 'boolean'}.
+    generate_legend : bool, optional
+        If True, generates a legend dictionary mapping categories to colors.
+    custom_colormap : Colormap | None, optional
+        Custom matplotlib colormap for continuous values.
+    custom_color_dict : dict | None, optional
+        Mapping from property values to colors.
+    zero_centred : bool, optional
+        If True (and method is 'continuous'), adjusts the normalization range so that zero is centered.
 
     Returns
     -------
-    dict: A dictionary containing:
-        - 'e_color' (PropertyMap): An edge property map with RGBA color values.
-        - 'legend_edge_color' (dict or None): A dictionary mapping categories to colors if generate_legend is True.
+    dict
+        A dictionary containing:
+            - 'e_color': edge PropertyMap with RGBA color values.
+            - 'legend_edge_color': mapping from categories to colors if generate_legend is True.
     """
     e_color = g.new_edge_property("vector<double>")
     legend = {} if generate_legend else None
@@ -1080,7 +1114,7 @@ def prop_to_size(g, prop, mi=1, ma=8, power=1, transform_func=None, mode="v"):
     ----------
     g : graph_tool.Graph
         The graph object.
-    prop : array-like or PropertyMap
+    prop : array-like or graph_tool.PropertyMap
         The property values to scale. Can be a list, numpy array, or a graph-tool property map (g.vp or g.ep).
     mi : float
         Minimum size.

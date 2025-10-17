@@ -51,17 +51,54 @@ def layer_stats(
     print_tables: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame | None]:
     """
-    Compute quick layer summaries.
+    Compute summary statistics for layers and interlayer edges.
 
-    You can pass DataFrames (fast, no need to scan the graph) OR, if you
-    already built the graph and kept layer props on vertices/edges, pass
-    `core` and it will derive the same tables.
+    This function generates per-layer node counts and per-layer-pair edge counts
+    for an OnionNet graph. You can provide either node and edge DataFrames
+    (for fast, direct computation), or an OnionNetGraph object with appropriate
+    vertex and edge properties.
+
+    Parameters
+    ----------
+    df_nodes : pandas.DataFrame or None, optional
+        DataFrame containing node information, with a column specifying the layer
+        of each node. If None, `core` must be provided.
+    df_edges : pandas.DataFrame or None, optional
+        DataFrame containing edge information, with columns specifying the source
+        and target layers of each edge. If None, `core` must be provided.
+    core : OnionNetGraph or None, optional
+        OnionNetGraph object containing the graph and its properties. Used to
+        compute statistics if DataFrames are not provided.
+    node_layer_col : str, default: "layer"
+        Column name in `df_nodes` indicating the layer of each node.
+    source_layer_col : str, default: "source_layer"
+        Column name in `df_edges` indicating the source layer of each edge.
+    target_layer_col : str, default: "target_layer"
+        Column name in `df_edges` indicating the target layer of each edge.
+    print_tables : bool, default: True
+        If True, print the resulting summary tables.
 
     Returns
     -------
-    nodes_by_layer : DataFrame with a single 'count' column (index = layer)
-    interlayer_edge_count : int or None
-    edges_by_pair : DataFrame with a single 'edges' column
+    tuple of (pandas.DataFrame, pandas.DataFrame or None)
+        A tuple containing:
+            - nodes_by_layer : pandas.DataFrame
+                DataFrame indexed by layer with a single column 'count' indicating the
+                number of nodes in each layer.
+            - edges_by_pair : pandas.DataFrame or None
+                DataFrame indexed by (source_layer, target_layer) with a single column
+                'edges' indicating the number of edges between each pair of layers.
+                Returns None if edge information is unavailable.
+
+    Raises
+    ------
+    ValueError
+        If neither DataFrames nor graph properties are available to compute statistics.
+
+    Notes
+    -----
+    - If both DataFrames and `core` are provided, DataFrames take precedence.
+    - The function also prints the interlayer edge count if available.
     """
     # --- nodes_by_layer ---
     if df_nodes is not None and node_layer_col in df_nodes:
@@ -179,42 +216,77 @@ def plot_layer_metagraph(
     # custom positioning (reuse prior layout)
     pos: PropertyMap | None = None,
 ) -> tuple[Graph, PropertyMap] | None:
-    """
+    r"""
     Draw a meta-graph whose vertices are layers and edges count cross-layer edges.
 
-    What it shows
-    -------------
-    • Vertex size ∝ per-layer node count (uniform if `nodes_by_layer=None`).
-    • Edge width ∝ edges between layer pairs.
-    • Optional labels:
-        - `show_node_counts=True`: include per-layer count in the vertex label.
-        - `show_edge_counts=True`: draw the edge count as a label on edges.
+    **What it shows:**
 
-    Scaling & ranges
-    ----------------
-    • Counts are transformed by `node_scaler` / `edge_scaler` ('log' or 'linear').
-    • Clamped to `node_size_range`, `edge_width_range`.
-    • Text sizes are independently clamped via `node_text_size_range`, `edge_text_size_range`.
+    - Vertex size is proportional to per-layer node count (uniform if ``nodes_by_layer=None``).
+    - Edge width is proportional to edges between layer pairs.
+    - Optional labels:
+        - ``show_node_counts=True``: include per-layer count in the vertex label.
+        - ``show_edge_counts=True``: draw the edge count as a label on edges.
+
+    **Scaling and ranges:**
+
+    - Counts are transformed by ``node_scaler`` / ``edge_scaler`` (``'log'`` or ``'linear'``).
+    - Values are clamped to ``node_size_range`` and ``edge_width_range``.
+    - Text sizes are independently clamped via ``node_text_size_range`` and ``edge_text_size_range``.
 
     Parameters
     ----------
-    edges_by_pair : DataFrame
-        MultiIndex (source_layer, target_layer) with an 'edges' column.
-    nodes_by_layer : DataFrame or None
-        Optional per-layer node counts (column 'count').
-    node_text_position : float|int
-        `-1` to center text inside node; otherwise angle (radians) relative to node.
-    family_colors : dict or None
-        Map family→RGBA; overrides auto palette. Families are derived by `family_extractor`
-        (or a simple prefix heuristic if None).
-    family_extractor : callable or None
-        Given a layer name → family string (used for coloring).
-    pos : VertexPropertyMap or None
-        Reuse a precomputed layout; if None, compute one.
+    edges_by_pair : pandas.DataFrame
+        MultiIndex ``(source_layer, target_layer)`` with an ``'edges'`` column.
+    nodes_by_layer : pandas.DataFrame or None
+        Optional per-layer node counts (column ``'count'``). If ``None``, node sizes are uniform.
+    node_scaler : {'log', 'linear'}, optional
+        Scaling function for vertex sizes. Default is ``'log'``.
+    edge_scaler : {'log', 'linear'}, optional
+        Scaling function for edge widths. Default is ``'log'``.
+    node_size_range : tuple of (float, float), optional
+        Minimum and maximum vertex sizes. Default is ``(10, 60)``.
+    edge_width_range : tuple of (float, float), optional
+        Minimum and maximum edge widths. Default is ``(0.5, 8.0)``.
+    node_text_size_range : tuple of (float, float), optional
+        Minimum and maximum font sizes for node labels. Default is ``(10, 16)``.
+    edge_text_size_range : tuple of (float, float), optional
+        Minimum and maximum font sizes for edge labels. Default is ``(8, 14)``.
+    show_edge_counts : bool, optional
+        If ``True``, show edge counts as edge labels. Default is ``False``.
+    show_node_counts : bool, optional
+        If ``True``, include per-layer node counts in vertex labels. Default is ``False``.
+    node_label_fmt : str, optional
+        Format string for vertex labels. Default is ``"{layer}\\n(n={count})"``.
+    node_text_position : int or float, optional
+        ``-1`` centers text inside node; otherwise, specifies an angle (radians) relative to the node.
+        Default is ``-1``.
+    pad_label_string : bool, optional
+        If ``True``, pad first-line labels to equal visible length. Default is ``False``.
+    use_monospace_font : bool, optional
+        If ``True``, use a monospace font for labels. Default is ``False``.
+    vertex_font : str or None, optional
+        Optional font family for vertex labels. Default is ``None``.
+    edge_font : str or None, optional
+        Optional font family for edge labels. Default is ``None``.
+    family_colors : dict[str, tuple[float, float, float, float]] or None, optional
+        Mapping of family → RGBA color tuples. Overrides automatic color palette. Default is ``None``.
+    family_extractor : callable or None, optional
+        Function ``family_extractor(layer_name)`` → family name for coloring.
+        If ``None``, a simple prefix heuristic is used. Default is ``None``.
+    layout : str, optional
+        Layout algorithm name (e.g., ``'sfdp'``, ``'fr'``). Default is ``'sfdp'``.
+    show_labels : bool, optional
+        Whether to render vertex labels. Default is ``True``.
+    output_size : tuple of (int, int), optional
+        Output canvas size (width, height) in pixels. Default is ``(900, 700)``.
+    return_graph : bool, optional
+        If ``True``, return the constructed meta-graph and layout. Default is ``False``.
+    pos : PropertyMap or None, optional
+        Precomputed vertex positions to reuse. If ``None``, a layout is computed. Default is ``None``.
 
     Returns
     -------
-    (Graph, PropertyMap) or None
+    tuple of (graph_tool.all.Graph, graph_tool.all.PropertyMap) or None
         Returns the constructed meta-graph and its layout if ``return_graph=True``,
         otherwise returns ``None``.
     """

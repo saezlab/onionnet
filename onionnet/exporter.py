@@ -1,14 +1,12 @@
-"""Export graph data (vertices/edges) into tabular formats."""
+"""Export graph data (vertices/edges) into tabular formats.
+
+Functions in this module convert graph-tool vertex/edge properties into
+structured outputs (pandas DataFrame, list of dicts, or dict keyed by ID).
+"""
 
 from __future__ import annotations
 
 import pandas as pd
-
-"""
-This module provides export functionality for the OnionNetGraph.
-It defines functions to export graph data (vertices and edges) to various formats such as a pandas DataFrame,
-a list of dictionaries, or a dictionary keyed by IDs.
-"""
 
 
 def export_info(g, mode="v", prop_names=None, noisy=False, return_type="pandas"):
@@ -21,7 +19,7 @@ def export_info(g, mode="v", prop_names=None, noisy=False, return_type="pandas")
 
     Parameters
     ----------
-    g : Graph or GraphView
+    g : graph_tool.Graph or graph_tool.GraphView
         The graph from which to export data.
     mode : str, optional
         Export mode: 'v' for vertices, 'e' for edges. Default is 'v'.
@@ -30,10 +28,10 @@ def export_info(g, mode="v", prop_names=None, noisy=False, return_type="pandas")
     noisy : bool, optional
         If True, print details of the exported data during processing. Default is False.
     return_type : str, optional
-        The format of the returned data:
-            - "pandas" (default) returns a pandas DataFrame
-            - "list" returns a list of dictionaries
-            - "dict" returns a dictionary keyed by vertex or edge ID
+        Output format. One of:
+            - ``"pandas"`` (default): pandas DataFrame
+            - ``"list"``: list of dictionaries
+            - ``"dict"``: dictionary keyed by vertex (``v_int``) or edge (``e_id``)
 
     Returns
     -------

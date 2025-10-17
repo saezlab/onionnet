@@ -25,11 +25,14 @@ def infer_property_type(value):
 
     Parameters
     ----------
-        value: A pandas Series or a single sample value (int, float, bool, or str).
+        value : pd.Series or int or float or bool or str
+            A pandas Series or a single sample value (int, float, bool, or str).
 
     Returns
     -------
-        str: A string representing the inferred property type. Possible return values include 'int', 'float', 'bool', 'string', or 'object'.
+    str
+        A string representing the inferred property type. Possible return values include
+        'int', 'float', 'bool', 'string', or 'object'.
     """
     # If value is a pandas Series, use its dtype
     if hasattr(value, "dtype"):
@@ -64,15 +67,19 @@ def map_categorical_property(prop_name, values, mapping: dict[str, int] | None =
 
     Parameters
     ----------
-        prop_name (str): The name of the property being mapped (used for reference or debugging).
-        values (iterable): An array-like collection of categorical values to map.
-        mapping (Dict[str, int], optional): An existing dictionary mapping categorical values to integer codes. Defaults to None.
+    prop_name : str
+        The name of the property being mapped (used for reference or debugging).
+    values : iterable
+        An array-like collection of categorical values to map.
+    mapping : dict of (str, int) or None, optional
+        Existing dictionary mapping categorical values to integer codes. Defaults to None.
 
     Returns
     -------
-        tuple: A tuple containing:
-            - mapped_values (np.ndarray): A NumPy array of integer codes corresponding to each value in 'values'.
-            - mapping (Dict[str, int]): The updated dictionary mapping each unique categorical value to its integer code.
+        tuple
+            A tuple containing:
+                - mapped_values (numpy.ndarray): A NumPy array of integer codes corresponding to each value in 'values'.
+                - mapping dict of (str, int): The updated dictionary mapping each unique categorical value to its integer code.
     """
     # mark prop_name as intentionally unused in logic
     _ = prop_name

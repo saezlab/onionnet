@@ -1,4 +1,9 @@
-"""Graph traversal and subgraph extraction helpers for OnionNet."""
+"""Graph traversal and subgraph extraction helpers for OnionNet.
+
+This module defines the OnionNetSearcher class, which provides functionality for graph traversal and subgraph extraction
+within an OnionNetGraph. It includes methods for computing shortest path related properties, performing breadth-first search
+traversals, and generating filtered graph views based on various criteria.
+"""
 
 from __future__ import annotations
 
@@ -13,12 +18,6 @@ from .property_manager import OnionNetPropertyManager
 
 INF_INT = 2_147_483_647  # graph-tool sentinel for unreachable on int distances
 
-"""
-This module defines the OnionNetSearcher class, which provides functionality for graph traversal and subgraph extraction
-within an OnionNetGraph. It includes methods for computing shortest path related properties, performing breadth-first search
-traversals, and generating filtered graph views based on various criteria.
-"""
-
 
 #########################################
 # Searcher: Graph Traversal & Subgraph Extraction
@@ -32,7 +31,8 @@ class OnionNetSearcher:
 
         Parameters
         ----------
-            core (OnionNetGraph): The core graph object that will be used for searching and traversal operations.
+            core : OnionNetGraph
+                The core graph object that will be used for searching and traversal operations.
         """
         self.core = core
         self.pm = OnionNetPropertyManager(core)
@@ -62,74 +62,98 @@ class OnionNetSearcher:
         directed: bool = True,
     ):
         """
-        Mark nodes on any shortest path from a source to targets.
+        Mark vertices that lie on any shortest path from a source to one or more targets.
 
-        This is a fast, allocation-light routine for large (unweighted) graphs. It
-        does not permanently attach properties to your graph; it only creates a
-        temporary boolean `on_sp` (on-shortest-path) property and, by default,
-        returns a `GraphView` filtered by it.
-
-        Behavior by mode
-        ----------------
-        If `directed=True` (default):
-            • Run 1 forward BFS from the source on G
-            • Run 1 reverse-view BFS per target on reversed(G)
-            • A vertex v is on-shortest-path iff
-                forward_dist[v] + reverse_dist[v] == forward_dist[target]
-
-        If `directed=False` (treat as undirected):
-            • Run 1 BFS from the source with `directed=False`
-            • Run 1 BFS from each target with `directed=False` (no reverse view)
-            • Combine target BFS results by elementwise min
-
-        Method (high level)
-        -------------------
-        1) Coerce inputs to integer vertex indices (accepts ints, Vertices, or
-        (layer_name, node_id_str) tuples via PropertyManager).
-        2) Compute forward distances from source.
-        3) Compute reverse/other-side distances from targets as described above.
-        4) Compute the set of required path lengths to each target.
-        5) Mark v as on-shortest if forward[v] + reverse[v] matches one of those lengths.
-        6) Return a GraphView over those vertices (or the raw boolean property).
+        This routine identifies all vertices that belong to at least one shortest
+        path between ``source`` and each vertex in ``targets`` in a large, unweighted
+        graph. It creates a temporary boolean vertex property ``on_sp`` (on-shortest-path)
+        and, by default, returns a ``GraphView`` filtered by it. No permanent
+        properties are attached unless you copy the graph and keep the property.
 
         Parameters
         ----------
-        source : int | Vertex | tuple[str, str]
-            Source vertex, either by integer index, a graph-tool Vertex, or a
-            (layer_name, node_id_str) pair.
-        targets : list | tuple
-            One or more targets in the same accepted formats as `source`.
-        return_gv : bool, default True
-            If True, return a `GraphView` filtered to on-shortest vertices.
-            If False, return the boolean vertex PropertyMap instead.
-        inplace : bool, default True
-            If False, operate on a copy of `g`/core.graph before building the view.
-            (Useful if you plan to attach the property.)
-        g : Graph | None
-            Optional graph to use instead of `self.core.graph`.
-        directed : bool, default True
-            Whether to treat the graph as directed. If False, run undirected BFS.
+        source : int or Vertex or tuple of (str, str)
+            The source vertex. Accepts an integer vertex index, a graph-tool
+            ``Vertex`` object, or a pair ``(layer_name, node_id_str)``.
+        targets : sequence of (int or Vertex or tuple of (str, str))
+            One or more targets, each in the same accepted formats as ``source``.
+        return_gv : bool, optional
+            If ``True`` (default), return a ``GraphView`` filtered to vertices with
+            ``on_sp == True``. If ``False``, return the boolean vertex
+            ``PropertyMap`` instead.
+        inplace : bool, optional
+            If ``False``, operate on a copy of ``g`` (or ``self.core.graph``) before
+            building the view. Useful if you intend to keep the property attached.
+            Default is ``True``.
+        g : Graph, optional
+            An explicit graph instance to use. If ``None``, defaults to
+            ``self.core.graph``.
+        directed : bool, optional
+            Whether to treat the graph as directed. If ``False``, run undirected
+            BFS. Default is ``True``.
 
         Returns
         -------
-        GraphView | PropertyMap
-            Filtered view (default) or the boolean vertex property.
+        graph_tool.GraphView or graph_tool.PropertyMap
+            A filtered ``GraphView`` containing only on-shortest-path vertices
+            (default), or the boolean vertex ``PropertyMap`` if ``return_gv`` is
+            ``False``.
 
-        Complexity
-        ----------
-        O((V + E) + T * (V + E)) in the worst case, where T = number of targets.
-        With a single target, it's ~two BFS passes → O(V + E).
+        Notes
+        -----
+        **Behavior by mode:**
+
+        - Directed (``directed=True``):
+            Run one forward BFS from ``source`` on ``G``. For each target, run one
+            BFS on the reversed graph. A vertex ``v`` lies on a shortest path to a
+            target ``t`` iff :math:`d_f[v] + d_r[v] = d_f[t]`, where :math:`d_f` is
+            the forward distance from ``source`` and :math:`d_r` is the distance to
+            ``t`` measured on the reversed graph.
+
+        - Undirected (``directed=False``):
+            Run one BFS from ``source`` with ``directed=False``. For each target,
+            run one additional BFS with ``directed=False`` (no reverse view). Combine
+            per-target distances by elementwise minimum.
+
+        **High-level method:**
+
+            1) Normalize inputs to integer vertex indices (ints, ``Vertex`` objects, or ``(layer, node_id)`` tuples).
+
+            2) Compute forward distances from ``source``.
+
+            3) Compute reverse/symmetric distances from each target as described above.
+
+            4) For each target, determine the required path length.
+
+            5) Mark vertex ``v`` as on-shortest if its combined distance equals one of those lengths.
+
+            6) Return a ``GraphView`` over the marked vertices (or the raw property).
+
+        **Complexity:**
+
+        Worst case :math:`O((V + E) + T (V + E))`, where :math:`T` is the number of
+        targets. With a single target, this is approximately two BFS passes,
+        :math:`O(V + E)`.
 
         Examples
         --------
-        # with layer/node labels
+        With layer/node labels:
+
         >>> searcher.compute_on_shortest(
         ...     source=("layer1", "nodeA"),
         ...     targets=[("layer2", "nodeB"), ("layer3", "nodeC")],
         ... )
 
-        # with integer indices, undirected
+        With integer indices, undirected:
+
         >>> searcher.compute_on_shortest(42, [43, 44], directed=False)
+
+        Raises
+        ------
+        ValueError
+            If ``targets`` is empty or contains invalid entries.
+        KeyError
+            If a specified vertex cannot be resolved from provided identifiers.
         """
         # 0) choose the working graph (copy if requested)
         g = g or self.core.graph
@@ -243,15 +267,19 @@ class OnionNetSearcher:
 
         Parameters
         ----------
-            seed_vertices (iterable): An iterable of starting vertices for the BFS.
-            vfilt (PropertyMap): A Boolean vertex property map to be updated with visited vertices.
-            efilt (PropertyMap): A Boolean edge property map to be updated with traversed edges.
-            mode (str, optional): Direction of traversal; 'downstream' (default) for forward traversal or
-                                  'upstream' for reverse traversal.
+        seed_vertices : iterable
+            Starting vertices for the BFS.
+        vfilt : PropertyMap
+            Boolean vertex property map updated with visited vertices.
+        efilt : PropertyMap
+            Boolean edge property map updated with traversed edges.
+        mode : str, optional
+            Direction of traversal; 'downstream' (default) for forward traversal or 'upstream' for reverse traversal.
 
         Raises
         ------
-            ValueError: If mode is not 'upstream' or 'downstream'.
+            ValueError
+                If mode is not 'upstream' or 'downstream'.
         """
         visited = set()
         queue = deque(seed_vertices)
@@ -297,23 +325,34 @@ class OnionNetSearcher:
 
         Parameters
         ----------
-            start_node_idx (int, optional): The index of the starting vertex (default is 0).
-            max_dist (int, optional): Maximum distance (in hops) from the starting vertex (default is 5).
-            direction (str, optional): Direction of search; 'downstream', 'upstream', 'bi' for bidirectional, or 'any' for non-directed (default is 'downstream').
-            node_text_prop (str, optional): Vertex property to use for node labels in the plot (default is 'node_label').
-            show_plot (bool, optional): If True, displays a plot of the filtered subgraph (default is True).
-            include_upstream_children (bool, optional): For bidirectional search, if True, include additional upstream children (default is False).
-            verbosity (bool, optional): If True, prints detailed information during the search process (default is False).
-            g (Graph, optional): An optional graph to operate on; defaults to self.core.graph if not provided.
-            **kwargs: Additional keyword arguments passed to graph_draw for plotting.
+            start_node_idx : int, optional
+                The index of the starting vertex (default is 0).
+            max_dist : int, optional
+                Maximum distance (in hops) from the starting vertex (default is 5).
+            direction : str, optional
+                Direction of search; 'downstream', 'upstream', 'bi' for bidirectional, or 'any' for non-directed (default is 'downstream').
+            node_text_prop : str, optional
+                Vertex property to use for node labels in the plot (default is 'node_label').
+            show_plot : bool, optional
+                If True, displays a plot of the filtered subgraph (default is True).
+            include_upstream_children : bool, optional
+                For bidirectional search, if True, include additional upstream children (default is False).
+            verbosity : bool, optional
+                If True, prints detailed information during the search process (default is False).
+            g : graph_tool.Graph, optional
+                An optional graph to operate on; defaults to self.core.graph if not provided.
+            **kwargs
+                Additional keyword arguments passed to graph_draw for plotting.
 
         Returns
         -------
-            GraphView: A filtered view of the graph containing vertices within the specified distance from the start vertex.
+            graph_tool.GraphView
+                A filtered view of the graph containing vertices within the specified distance from the start vertex.
 
         Raises
         ------
-            ValueError: If the starting vertex index is invalid or if an invalid search direction is specified.
+            ValueError
+                If the starting vertex index is invalid or if an invalid search direction is specified.
         """
         g = g or self.core.graph
 
@@ -404,17 +443,22 @@ class OnionNetSearcher:
 
         Parameters
         ----------
-            layer_names (Union[List[str], str]): A single layer name or a list of layer names to filter vertices by.
-            return_filter (bool, optional): If True, returns the Boolean vertex property used for filtering instead of a GraphView.
-            copy_gv (bool, optional): If True, returns a new Graph object constructed from the GraphView.
+        layer_names : list of str | str
+            A single layer name or a list of layer names to filter vertices by.
+        return_filter : bool, optional
+            If True, returns the Boolean vertex property used for filtering instead of a GraphView.
+        copy_gv : bool, optional
+            If True, returns a new Graph object constructed from the GraphView.
 
         Returns
         -------
-            Union[GraphView, PropertyMap]: The filtered GraphView or Boolean property map based on the layer filter.
+            graph_tool.GraphView or graph_tool.PropertyMap
+                The filtered GraphView or Boolean property map based on the layer filter.
 
         Raises
         ------
-            ValueError: If any specified layer name does not exist.
+            ValueError
+                If any specified layer name does not exist.
         """
         if isinstance(layer_names, str):
             layer_names = [layer_names]
@@ -445,13 +489,17 @@ class OnionNetSearcher:
 
         Parameters
         ----------
-            size_threshold (int): The minimum number of vertices a component must have to be included.
-            connectivity (str, optional): 'strong' for strongly connected components, otherwise weakly connected (default is "strong").
-            g (Graph, optional): The graph to operate on; defaults to self.core.graph.
+        size_threshold : int
+            The minimum number of vertices a component must have to be included.
+        connectivity : str, optional
+            'strong' for strongly connected components, otherwise weakly connected (default is "strong").
+        g : graph_tool.Graph, optional
+            The graph to operate on; defaults to self.core.graph.
 
         Returns
         -------
-            GraphView: A view of the graph showing only components that meet the size threshold.
+            graph_tool.GraphView
+                A view of the graph showing only components that meet the size threshold.
         """
         g = g or self.core.graph
         directed = connectivity.lower() == "strong"
@@ -472,19 +520,26 @@ class OnionNetSearcher:
 
         Parameters
         ----------
-            prop_name (str): The property name to filter by.
-            target_value (Any): The value or set of values to compare against.
-            comparison (str, optional): Comparison operator (default "=="). Options: "==", "!=", "<", ">", "<=", ">=".
-            dim (str, optional): Dimension to filter on; 'v' for vertices (default) or 'e' for edges.
-            prune_isolated (bool, optional): If True, further filters the view to retain only vertices with at least one incident edge.
+        prop_name : str
+            The property name to filter by.
+        target_value : Any
+            The value or set of values to compare against.
+        comparison : str, optional
+            Comparison operator (default "=="). Options: "==", "!=", "<", ">", "<=", ">=".
+        dim : str, optional
+            Dimension to filter on; 'v' for vertices (default) or 'e' for edges.
+        prune_isolated : bool, optional
+            If True, further filters the view to retain only vertices with at least one incident edge.
 
         Returns
         -------
-            GraphView: A filtered view of the graph based on the property filter.
+            graph_tool.GraphView
+                A filtered view of the graph based on the property filter.
 
         Raises
         ------
-            ValueError: If the property does not exist or an invalid dimension is provided.
+            ValueError
+                If the property does not exist or an invalid dimension is provided.
         """
         import operator
 
@@ -555,19 +610,26 @@ class OnionNetSearcher:
 
         Parameters
         ----------
-            filter_funcs (list): A list of functions, each accepting a vertex (or edge) and returning True if it should be kept.
-            mode (str, optional): Logical combination mode; "and" (default) requires all functions to return True, "or" requires at least one.
-            type (str, optional): The dimension of filtering; 'v' for vertices (default) or 'e' for edges.
-            return_prop (bool, optional): If True, returns a new Boolean property map instead of a GraphView.
-            g (Graph, optional): The graph to operate on; defaults to self.core.graph.
+        filter_funcs : list
+            Functions, each accepting a vertex (or edge) and returning True if it should be kept.
+        mode : str, optional
+            Logical combination mode; "and" (default) requires all functions to return True, "or" requires at least one.
+        type : str, optional
+            The dimension of filtering; 'v' for vertices (default) or 'e' for edges.
+        return_prop : bool, optional
+            If True, returns a new Boolean property map instead of a GraphView.
+        g : graph_tool.Graph, optional
+            The graph to operate on; defaults to self.core.graph.
 
         Returns
         -------
-            Union[GraphView, PropertyMap]: A composite filter represented as a GraphView or a Boolean property map.
+            graph_tool.GraphView or graph_tool.PropertyMap
+                A composite filter represented as a GraphView or a Boolean property map.
 
         Raises
         ------
-            ValueError: If an invalid mode or type is specified.
+            ValueError
+                If an invalid mode or type is specified.
         """
         g = g or self.core.graph
 
@@ -603,14 +665,14 @@ class OnionNetSearcher:
 
         Parameters
         ----------
-        predicate : Callable
+        predicate : callable
             A function taking a graph-tool Edge and returning True to keep it.
         return_view : bool
             If True, returns a GraphView; if False, returns the raw edge-bool PropertyMap.
 
         Returns
         -------
-        GraphView or PropertyMap
+        graph_tool.GraphView or graph_tool.PropertyMap
         """
         g = self.core.graph
         efilt = g.new_edge_property("bool")
@@ -656,15 +718,17 @@ class OnionNetSearcher:
 
         - forward: keep edges where source→target
         - reverse: keep edges where target→source
-        - both:    keep edges in either direction
+        - both: keep edges in either direction
 
         After filtering, any vertices that become isolated (no remaining incident edges)
         are automatically pruned.
 
-        Vectorized to:
+        Notes
+        -----
+        The implementation is vectorized to:
+
         - look up the integer codes for source_label and target_label
-        - build a NumPy mask of edges whose (src_layer, tgt_layer) matches
-            one of the allowed pairs for forward/reverse/both
+        - build a mask of edges whose (src_layer, tgt_layer) matches one of the allowed pairs
         - return a pruned GraphView
 
         Parameters
@@ -675,15 +739,15 @@ class OnionNetSearcher:
         target_label : str
             Human-readable name of the layer for edge targets. Must exist in
             self.core.layer_name_to_code, or a KeyError is raised.
-        mode : {'forward','reverse','both'}, optional
+        mode : str, optional
             Which direction(s) to keep:
-            - 'forward': source→target only (default)
-            - 'reverse': target→source only
-            - 'both':    both directions
+                - 'forward': source→target only (default)
+                - 'reverse': target→source only
+                - 'both':    both directions
 
         Returns
         -------
-        GraphView
+        graph_tool.GraphView
             A filtered view of the underlying graph containing only the selected edges,
             with any isolated vertices removed.
 
@@ -736,7 +800,22 @@ class OnionNetSearcher:
         layer2: str,
         prop_name: str = "layer_decoded",
     ) -> GraphView:
-        """Create a bipartite GraphView between two layer labels."""
+        """Create a bipartite GraphView between two layer labels.
+
+        Parameters
+        ----------
+        layer1 : str
+            The first layer name.
+        layer2 : str
+            The second layer name.
+        prop_name : str, optional
+            The property name to use; only 'layer_decoded' is supported (default).
+
+        Returns
+        -------
+        graph_tool.GraphView
+            A filtered view containing edges between the two specified layers.
+        """
         # Back-compat note: prop_name is ignored; layer_decoded is not required anymore.
         # You can optionally warn here if you like.
         # warnings.warn("create_bipartite_gv is a thin wrapper. Use filter_edges_between_categories(..., mode='both').",

@@ -1,4 +1,8 @@
-"""Property access and decoding utilities for OnionNet graphs."""
+"""Property access and decoding utilities for OnionNet graphs.
+
+Provides ``OnionNetPropertyManager`` to get/set properties, view and decode
+categorical labels, and derive human-readable vertex labels.
+"""
 
 from __future__ import annotations
 
@@ -13,11 +17,6 @@ if TYPE_CHECKING:
     from .core import OnionNetGraph
 from .utils import infer_property_type
 
-"""
-This module provides the OnionNetPropertyManager class, which handles property access, conversion, and management for vertices (and edges) in an OnionNetGraph.
-It includes methods to get and set vertex properties, view properties, create human-readable labels, and decode encoded property values.
-"""
-
 
 #########################################
 # Property Manager: Access and Conversion
@@ -31,7 +30,8 @@ class OnionNetPropertyManager:
 
         Parameters
         ----------
-            core (OnionNetGraph): The core graph object that holds the graph and its mappings.
+        core : OnionNetGraph
+            The core graph object that holds the graph and its mappings.
         """
         self.core = core
 
@@ -41,12 +41,15 @@ class OnionNetPropertyManager:
 
         Parameters
         ----------
-            layer_code (int): The integer code representing the layer.
-            node_id_int (int): The integer code representing the node identifier.
+        layer_code : int
+            Integer code representing the layer.
+        node_id_int : int
+            Integer code representing the node identifier.
 
         Returns
         -------
-            Vertex: The corresponding vertex object if found; otherwise, None.
+        Vertex
+            The corresponding vertex object if found; otherwise, None.
         """
         idx = self.core.custom_id_to_vertex_index.get((layer_code, node_id_int))
         return self.core.graph.vertex(idx) if idx is not None else None
@@ -57,12 +60,15 @@ class OnionNetPropertyManager:
 
         Parameters
         ----------
-            layer_name (str): The name of the layer.
-            node_id_str (str): The string representation of the node identifier.
+        layer_name : str
+            The name of the layer.
+        node_id_str : str
+            The string representation of the node identifier.
 
         Returns
         -------
-            Vertex: The corresponding vertex object if found.
+        Vertex
+            The corresponding vertex object if found.
 
         Raises
         ------
@@ -80,13 +86,17 @@ class OnionNetPropertyManager:
 
         Parameters
         ----------
-            layer_code (int): The integer code representing the layer.
-            node_id_int (int): The integer code representing the node identifier.
-            prop_name (str): The name of the property to retrieve.
+        layer_code : int
+            Integer code representing the layer.
+        node_id_int : int
+            Integer code representing the node identifier.
+        prop_name : str
+            The name of the property to retrieve.
 
         Returns
         -------
-            Any: The value of the property if it exists; otherwise, None.
+        Any
+            The value of the property if it exists; otherwise, None.
         """
         v = self.get_vertex_by_encoding_tuple(layer_code, node_id_int)
         if v is not None and prop_name in self.core.graph.vp:
@@ -99,15 +109,19 @@ class OnionNetPropertyManager:
 
         If the property does not already exist, it is created using the inferred type of the provided value.
 
+        **Side Effects:**
+            Updates the property map of the graph with the new value.
+
         Parameters
         ----------
-            layer_code (int): The integer code representing the layer.
-            node_id_int (int): The integer code representing the node identifier.
-            prop_name (str): The name of the property to set.
-            value (Any): The value to assign to the property.
-
-        Side Effects:
-            Updates the property map of the graph with the new value.
+        layer_code : int
+            Integer code representing the layer.
+        node_id_int : int
+            Integer code representing the node identifier.
+        prop_name : str
+            The name of the property to set.
+        value : Any
+            The value to assign to the property.
 
         Notes
         -----
@@ -128,16 +142,21 @@ class OnionNetPropertyManager:
 
         Parameters
         ----------
-            layer_code (int): The integer code representing the layer.
-            node_id_int (int): The integer code representing the node identifier.
+        layer_code : int
+            Integer code representing the layer.
+        node_id_int : int
+            Integer code representing the node identifier.
 
         Returns
         -------
-            Dict[str, Any]: A dictionary of property names and their corresponding values for the vertex.
-                          Includes decoded layer and node identifiers.
+        dict of (str, Any)
+            Mapping of property names to values for the vertex, including
+            decoded layer and node identifiers.
 
-        Side Effects:
-            If the vertex is not found, prints an error message and returns an empty dictionary.
+        Notes
+        -----
+        If the vertex is not found, an empty dictionary is returned and a
+        message is printed.
         """
         v = self.get_vertex_by_encoding_tuple(layer_code, node_id_int)
         if v is None:
@@ -171,16 +190,17 @@ class OnionNetPropertyManager:
 
         Parameters
         ----------
-            layer_name (str): The name of the layer.
-            node_id_str (str): The string representation of the node identifier.
-            verbose (bool, optional): If True, prints the properties. Defaults to False.
+        layer_name : str
+            Name of the layer.
+        node_id_str : str
+            String representation of the node identifier.
+        verbose : bool, optional
+            If ``True``, prints the properties. Defaults to ``False``.
 
         Returns
         -------
-            Dict[str, Any]: A dictionary of property names and their corresponding values.
-
-        Side Effects:
-            If verbose is True, prints the properties to the console.
+        dict of (str, Any)
+            Dictionary of property names and their corresponding values.
         """
         props = self.view_node_properties(
             self.core.layer_name_to_code[layer_name],
@@ -200,10 +220,12 @@ class OnionNetPropertyManager:
 
         Parameters
         ----------
-            prop_name (str, optional): The name of the new label property. Defaults to 'node_label'.
+        prop_name : str, optional
+            Name of the new label property. Defaults to ``"node_label"``.
 
-        Side Effects:
-            Adds a new vertex property to the graph and prints a confirmation message.
+        Notes
+        -----
+        Adds a new vertex property to the graph and prints a confirmation message.
         """
         if prop_name in self.core.graph.vp:
             print(f"Property '{prop_name}' already exists.")
@@ -226,26 +248,34 @@ class OnionNetPropertyManager:
         g: Graph = None,
     ) -> None:
         """
-        Create a new property by mapping encoded integer values to human-readable strings.
-
-        Uses NumPy vectorized operations to apply the mapping across the property values.
+        Map encoded integer property values to human-readable strings and create a new property.
 
         Parameters
         ----------
-            encoded_prop_type (str): 'v' for vertex or 'e' for edge.
-            encoded_prop_name (str): Name of the existing encoded property.
-            new_prop_name (str, optional): Name of the new property. Defaults to f"{encoded_prop_name}_decoded".
-            mapping_dict (Dict[int, str], optional): Dictionary mapping integer codes to strings.
-                If not provided, defaults to the core's categorical mapping for the property.
-            default_label (str): The label to use if a value is not found in the mapping dictionary.
-
-        Side Effects:
-            Adds a new property to the graph with human-readable labels and prints a confirmation message.
+        encoded_prop_type : str
+            'v' for vertex property, 'e' for edge property.
+        encoded_prop_name : str
+            Name of the encoded property to decode.
+        new_prop_name : str, optional
+            Name of the new decoded property. If None, defaults to '{encoded_prop_name}_decoded'.
+        mapping_dict : dict of (int, str), optional
+            Mapping from integer codes to string labels. If None, uses the core's categorical mapping.
+        default_label : str, optional
+            Label to use if a code is not found in the mapping. Default is 'Unknown'.
+        g : graph_tool.Graph, optional
+            Graph or GraphView to operate on. If None, uses the core graph.
 
         Raises
         ------
-            ValueError: If the encoded_prop_type is not 'v' or 'e', or if property conversion fails.
-            KeyError: If the specified encoded property does not exist.
+        ValueError
+            If encoded_prop_type is not 'v' or 'e', or if property conversion fails.
+        KeyError
+            If the specified encoded property does not exist.
+
+        Notes
+        -----
+        Adds a new property to the graph with human-readable labels.
+        Prints a confirmation message upon successful creation.
         """
         if encoded_prop_type not in ("v", "e"):
             raise ValueError("encoded_prop_type must be 'v' (vertex) or 'e' (edge).")
@@ -381,16 +411,17 @@ class OnionNetPropertyManager:
         to object-type columns, creating a decoded property for each via mapping integer codes
         to human-readable strings.
 
-        Parameters
-        ----------
-            df (pd.DataFrame): DataFrame containing columns corresponding to encoded properties.
-            encoded_prop_type (str, optional): 'v' for vertex properties or 'e' for edge properties.
-                Defaults to 'v'.
-
-        Side Effects:
+        **Side Effects:**
             For each object-type column in df, adds a new decoded property to the graph by calling
             decode_property_labels. Prints a message for non-object-type columns indicating no decoding
             was performed.
+
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            DataFrame containing columns corresponding to encoded properties.
+        encoded_prop_type : str, optional
+            'v' for vertex properties or 'e' for edge properties. Defaults to 'v'.
 
         Raises
         ------

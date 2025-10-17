@@ -26,11 +26,16 @@ class OnionNet:
 
     Attributes
     ----------
-        core (OnionNetGraph): The core graph object.
-        builder (OnionNetBuilder): Component for adding nodes and edges to the graph.
-        searcher (OnionNetSearcher): Component for querying and viewing graph subsets.
-        prop_manager (OnionNetPropertyManager): Component for managing vertex properties.
-        _node_map (Dict[Tuple[str, str], int]): Internal cache mapping (layer, node) to vertex index.
+        core : OnionNetGraph
+            The core graph object.
+        builder : OnionNetBuilder
+            Component for adding nodes and edges to the graph.
+        searcher : OnionNetSearcher
+            Component for querying and viewing graph subsets.
+        prop_manager : OnionNetPropertyManager
+            Component for managing vertex properties.
+        _node_map : dict of (tuple of (str, str), int)
+            Internal cache mapping (layer, node) to vertex index.
     """
 
     def __init__(self, directed: bool = True):
@@ -56,8 +61,10 @@ class OnionNet:
 
         Parameters
         ----------
-            *args: Positional arguments forwarded to the builder.
-            **kwargs: Keyword arguments forwarded to the builder.
+            *args
+                Positional arguments forwarded to the builder.
+            **kwargs
+                Keyword arguments forwarded to the builder.
         """
         self.builder.grow_onion(*args, **kwargs)
         self._node_map = None  # reset cache if graph changes
@@ -71,7 +78,8 @@ class OnionNet:
 
         Returns
         -------
-            GraphView: A view of the graph based on the search criteria.
+            graph_tool.GraphView
+                A view of the graph based on the search criteria.
         """
         return self.searcher.search(*args, **kwargs)
 
@@ -83,7 +91,8 @@ class OnionNet:
 
         Returns
         -------
-            GraphView: A view of the graph filtered by layers.
+            graph_tool.GraphView
+                A view of the graph filtered by layers.
         """
         return self.searcher.view_layers(*args, **kwargs)
 
@@ -95,7 +104,8 @@ class OnionNet:
 
         Returns
         -------
-            GraphView: A view of the graph filtered by connected components.
+            graph_tool.GraphView
+                A view of the graph filtered by connected components.
         """
         return self.searcher.view_components(*args, **kwargs)
 
@@ -107,7 +117,8 @@ class OnionNet:
 
         Returns
         -------
-            GraphView: A view of the graph filtered by the specified property criteria.
+            graph_tool.GraphView
+                A view of the graph filtered by the specified property criteria.
         """
         return self.searcher.filter_view_by_property(*args, **kwargs)
 
@@ -119,7 +130,8 @@ class OnionNet:
 
         Returns
         -------
-            GraphView: A view of the graph after applying composed filters.
+            graph_tool.GraphView
+                A view of the graph after applying composed filters.
         """
         return self.searcher.compose_filters(*args, **kwargs)
 
@@ -131,17 +143,13 @@ class OnionNet:
 
         Returns
         -------
-            GraphView: A bipartite view of the graph.
+            graph_tool.GraphView
+                A bipartite view of the graph.
         """
         return self.searcher.create_bipartite_gv(*args, **kwargs)
 
     def filter_edges_between_categories(self, *args, **kwargs):
-        """Filter edges by layer source/target labels.
-
-        High-level convenience: filter only those edges whose
-          source_layer==… AND target_layer==…,
-        and then prune isolated vertices.
-        """
+        """Filter edges by layer source/target labels and prune isolated vertices."""
         return self.searcher.filter_edges_between_categories(*args, **kwargs)
 
     # Property-related API
@@ -210,10 +218,10 @@ class OnionNet:
         self.prop_manager.decode_property_labels_bulk(*args, **kwargs)
 
     def get_category_code(self, *args, **kwargs) -> int:
-        """Look up the integer code for a categorical property value.
+        """
+        Look up the integer code for a categorical property value.
 
-        Use this to build GraphView filters without digging into internals.
-        so you can build GraphView filters without digging into internals.
+        Useful for building GraphView filters without relying on internals.
         """
         return self.prop_manager.get_category_code(*args, **kwargs)
 
@@ -227,7 +235,8 @@ class OnionNet:
 
         Returns
         -------
-            Dict[Tuple[str, str], int]: A dictionary mapping (layer, node) to vertex index.
+            dict of (tuple of (str, str), int)
+                A dictionary mapping (layer, node) to vertex index.
         """
         if self._node_map is None:
             self._node_map = {}
@@ -244,6 +253,7 @@ class OnionNet:
 
         Returns
         -------
-            Graph: The core graph contained in the OnionNetGraph.
+            graph_tool.Graph
+                The core graph contained in the OnionNetGraph.
         """
         return self.core.graph

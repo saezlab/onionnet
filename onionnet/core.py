@@ -1,4 +1,10 @@
-"""Core graph structures and mappings for OnionNet."""
+"""Core graph structures and mappings for OnionNet.
+
+This module defines the ``OnionNetGraph`` class, the central graph
+container used by OnionNet. It manages mappings between human-readable
+layer/node identifiers and their integer encodings and provides helpers
+to allocate core vertex properties.
+"""
 
 from __future__ import annotations
 
@@ -13,10 +19,7 @@ try:
 except Exception:
     IPYTHON_AVAILABLE = False
 
-"""
-This module defines the OnionNetGraph class, which serves as the core graph structure for the OnionNet project.
-It uses graph-tool for graph representation and provides mapping functions for custom vertex identifiers and layers.
-"""
+# (former duplicate module description removed to keep a single module docstring)
 
 
 #########################################
@@ -32,15 +35,24 @@ class OnionNetGraph:
 
     Attributes
     ----------
-        graph (Graph): The underlying graph_tool.Graph object.
-        custom_id_to_vertex_index (dict[tuple[int, int], int]): Mapping from custom ID tuple (layer, node_id) to vertex index.
-        vertex_index_to_custom_id (dict[int, tuple[int, int]]): Reverse mapping from vertex index to custom ID tuple.
-        layer_code_to_name (dict[int, str]): Mapping from layer code to layer name.
-        layer_name_to_code (dict[str, int]): Mapping from layer name to layer code.
-        node_id_int_to_str (dict[int, str]): Mapping from integer node id to its string representation.
-        node_id_str_to_int (dict[str, int]): Mapping from string node id to its integer representation.
-        vertex_categorical_mappings (dict[str, dict[str, Any]]): Mappings for vertex categorical properties.
-        edge_categorical_mappings (dict[str, dict[str, Any]]): Mappings for edge categorical properties.
+    graph : graph_tool.Graph
+        The underlying ``graph_tool.Graph`` object.
+    custom_id_to_vertex_index : dict of (tuple of (int, int), int)
+        Mapping from custom ID tuple ``(layer, node_id)`` to vertex index.
+    vertex_index_to_custom_id : dict of (int, tuple of (int, int))
+        Reverse mapping from vertex index to custom ID tuple.
+    layer_code_to_name : dict of (int, str)
+        Mapping from layer code to layer name.
+    layer_name_to_code : dict of (str, int)
+        Mapping from layer name to layer code.
+    node_id_int_to_str : dict of (int, str)
+        Mapping from integer node ID to its string representation.
+    node_id_str_to_int : dict of (str, int)
+        Mapping from string node ID to its integer representation.
+    vertex_categorical_mappings : dict of (str, dict of (str, Any))
+        Mappings for vertex categorical properties.
+    edge_categorical_mappings : dict of (str, dict of (str, Any))
+        Mappings for edge categorical properties.
     """
 
     def __init__(self, directed: bool = True):
@@ -49,10 +61,14 @@ class OnionNetGraph:
 
         Parameters
         ----------
-            directed (bool, optional): Determines if the graph is directed. Defaults to True.
+        directed : bool, optional
+            Determines if the graph is directed. Defaults to True.
 
-        The constructor initializes the underlying graph_tool.Graph and sets up dictionaries for custom ID mappings and
-        categorical properties. It also creates vertex properties for layer and node identifiers.
+        Notes
+        -----
+        Initializes the underlying ``graph_tool.Graph`` and sets up dictionaries for
+        custom ID mappings and categorical properties. Also creates vertex properties
+        for layer and node identifiers.
         """
         self.graph = Graph(directed=directed)
 
@@ -83,11 +99,13 @@ class OnionNetGraph:
 
         Parameters
         ----------
-            layer_name (str): The name of the layer.
+        layer_name : str
+            The name of the layer.
 
         Returns
         -------
-            int: The integer code corresponding to the layer.
+        int
+            The integer code corresponding to the layer.
         """
         # Treat layer names as-is (no whitespace normalization)
         key = str(layer_name)
@@ -107,11 +125,13 @@ class OnionNetGraph:
 
         Parameters
         ----------
-            node_id_str (str): The node identifier as a string.
+        node_id_str : str
+            The node identifier as a string.
 
         Returns
         -------
-            int: The integer code corresponding to the node identifier.
+        int
+            The integer code corresponding to the node identifier.
         """
         if node_id_str in self.node_id_str_to_int:
             return self.node_id_str_to_int[node_id_str]
