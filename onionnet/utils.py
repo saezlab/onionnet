@@ -12,27 +12,28 @@ import pandas as pd
 
 def infer_property_type(value):
     """
-    Infer the property type based on a pandas Series or a single sample value.
+    Infer a simple property type from a pandas Series or a single value.
 
-    This function inspects the input value to determine its type. If the value is a pandas Series, it uses the Series
-    dtype to infer the type and returns:
-      - 'int' for integer types,
-      - 'float' for floating-point types,
-      - 'bool' for boolean types,
-      - 'string' for object or other types.
+    For pandas Series, the Series ``dtype`` is mapped to one of the
+    following strings after inspection:
 
-    For individual sample values, the function checks the type using isinstance and returns the corresponding string.
+    - ``"int"`` for integer types
+    - ``"float"`` for floating-point types
+    - ``"bool"`` for boolean types
+    - ``"string"`` for object or other types
+
+    For individual values, ``isinstance`` checks are used to return the
+    corresponding string.
 
     Parameters
     ----------
-        value : pd.Series or int or float or bool or str
-            A pandas Series or a single sample value (int, float, bool, or str).
+    value : pandas.Series | int | float | bool | str
+        A pandas Series or a single sample value.
 
     Returns
     -------
     str
-        A string representing the inferred property type. Possible return values include
-        'int', 'float', 'bool', 'string', or 'object'.
+        One of: ``"int"``, ``"float"``, ``"bool"``, ``"string"``, ``"object"``.
     """
     # If value is a pandas Series, use its dtype
     if hasattr(value, "dtype"):

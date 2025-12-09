@@ -58,7 +58,10 @@ intersphinx_mapping = {
 }
 
 templates_path = ["_templates"]
-exclude_patterns = []
+exclude_patterns = [
+    "**/.ipynb_checkpoints",
+    "notebooks/.data/**",
+]
 
 # Allow .md files and tell Sphinx our master doc is named "index"
 source_suffix = {
