@@ -53,7 +53,7 @@ onionnet.visualisation module
    :undoc-members:
 
 onionnet.analytics module
-------------------------
+-------------------------
 
 .. automodule:: onionnet.analytics
    :members:

@@ -1,0 +1,40 @@
+{% set name = "onionnet" %}
+{% set version = "1.1.0" %}
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  path: ..
+
+build:
+  number: 1
+  script: {{ PYTHON }} -m pip install . -vv
+
+requirements:
+  host:
+    - python
+    - pip
+    - hatchling >=1.18
+  run:
+    - python >=3.10
+    - numpy
+    - pandas
+    - graph-tool
+
+test:
+  imports:
+    - onionnet
+  commands:
+    - python -c "import onionnet; print(onionnet.__version__)"
+
+about:
+  home: https://github.com/saezlab/onionnet
+  license: GPL-3.0-only
+  license_file: LICENSE
+  summary: A package for creating and analysing large multilayered networks using graph-tool.
+
+extra:
+  recipe-maintainers:
+    - your-github-handle

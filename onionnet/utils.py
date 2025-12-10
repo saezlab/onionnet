@@ -1,73 +1,89 @@
+"""Utility helpers for OnionNet (type inference, category mapping)."""
+
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
-from typing import List, Any, Dict
 
 #########################################
 # Utility Functions
 #########################################
 
+
 def infer_property_type(value):
     """
-    Infer the property type based on a pandas Series or a single sample value.
-    
-    This function inspects the input value to determine its type. If the value is a pandas Series, it uses the Series
-    dtype to infer the type and returns:
-      - 'int' for integer types,
-      - 'float' for floating-point types,
-      - 'bool' for boolean types,
-      - 'string' for object or other types.
-    
-    For individual sample values, the function checks the type using isinstance and returns the corresponding string.
-    
-    Parameters:
-        value: A pandas Series or a single sample value (int, float, bool, or str).
-    
-    Returns:
-        str: A string representing the inferred property type. Possible return values include 'int', 'float', 'bool', 'string', or 'object'.
+    Infer a simple property type from a pandas Series or a single value.
+
+    For pandas Series, the Series ``dtype`` is mapped to one of the
+    following strings after inspection:
+
+    - ``"int"`` for integer types
+    - ``"float"`` for floating-point types
+    - ``"bool"`` for boolean types
+    - ``"string"`` for object or other types
+
+    For individual values, ``isinstance`` checks are used to return the
+    corresponding string.
+
+    Parameters
+    ----------
+    value : pandas.Series | int | float | bool | str
+        A pandas Series or a single sample value.
+
+    Returns
+    -------
+    str
+        One of: ``"int"``, ``"float"``, ``"bool"``, ``"string"``, ``"object"``.
     """
     # If value is a pandas Series, use its dtype
-    if hasattr(value, 'dtype'):
+    if hasattr(value, "dtype"):
         if pd.api.types.is_integer_dtype(value.dtype):
-            return 'int'
-        elif pd.api.types.is_float_dtype(value.dtype):
-            return 'float'
-        elif pd.api.types.is_bool_dtype(value.dtype):
-            return 'bool'
-        else:
-            # For object or other dtypes, assume string
-            return 'string'
-    
+            return "int"
+        if pd.api.types.is_float_dtype(value.dtype):
+            return "float"
+        if pd.api.types.is_bool_dtype(value.dtype):
+            return "bool"
+        # For object or other dtypes, assume string
+        return "string"
+
     # Fallback for single sample values
-    if isinstance(value, (int, np.integer)):
-        return 'int'
-    elif isinstance(value, (float, np.floating)):
-        return 'float'
-    elif isinstance(value, str):
-        return 'string'
-    elif isinstance(value, (bool, np.bool_)):
-        return 'bool'
-    else:
-        return 'object'
+    if isinstance(value, int | np.integer):
+        return "int"
+    if isinstance(value, float | np.floating):
+        return "float"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, bool | np.bool_):
+        return "bool"
+    return "object"
 
 
-def map_categorical_property(prop_name, values, mapping: Dict[str, int] = None):
+def map_categorical_property(prop_name, values, mapping: dict[str, int] | None = None):
     """
     Map categorical property values to unique integer codes.
-    
+
     This function converts an iterable of categorical values into a NumPy array of integer codes. Each unique value
     is assigned a unique integer. If an initial mapping is provided, it will be used as the starting point; otherwise,
     a new mapping is created. The function returns both the array of integer codes and the mapping dictionary.
-    
-    Parameters:
-        prop_name (str): The name of the property being mapped (used for reference or debugging).
-        values (iterable): An array-like collection of categorical values to map.
-        mapping (Dict[str, int], optional): An existing dictionary mapping categorical values to integer codes. Defaults to None.
-    
-    Returns:
-        tuple: A tuple containing:
-            - mapped_values (np.ndarray): A NumPy array of integer codes corresponding to each value in 'values'.
-            - mapping (Dict[str, int]): The updated dictionary mapping each unique categorical value to its integer code.
+
+    Parameters
+    ----------
+    prop_name : str
+        The name of the property being mapped (used for reference or debugging).
+    values : iterable
+        An array-like collection of categorical values to map.
+    mapping : dict of (str, int) or None, optional
+        Existing dictionary mapping categorical values to integer codes. Defaults to None.
+
+    Returns
+    -------
+        tuple
+            A tuple containing:
+                - mapped_values (numpy.ndarray): A NumPy array of integer codes corresponding to each value in 'values'.
+                - mapping dict of (str, int): The updated dictionary mapping each unique categorical value to its integer code.
     """
+    # mark prop_name as intentionally unused in logic
+    _ = prop_name
     if mapping is None:
         mapping = {}
     mapped_values = np.empty(len(values), dtype=np.int32)

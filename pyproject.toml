@@ -1,0 +1,94 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "onionnet"
+version = "1.2.1"
+description = "A package for creating and analysing large mulilayered networks using graph-tool."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Macabe Daley" }]
+keywords = ["graph-tool", "networks", "multilayer", "analysis"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+]
+dependencies = [
+  "numpy",
+  "pandas",
+]
+
+[project.optional-dependencies]
+# graph-tool is typically installed via conda; leave as optional
+graph = ["graph-tool"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["onionnet"]
+
+[tool.hatch.build.targets.sdist]
+include = ["onionnet", "README.md", "LICENSE"]
+
+# -------------------------
+# Ruff: formatter + linter
+# -------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = [".git", ".venv", "venv", "build", "dist", "__pycache__", "docs/_build", "node_modules", "docs/**.ipynb",]
+
+[tool.ruff.format]
+docstring-code-format = true
+quote-style = "double"
+indent-style = "space"
+
+[tool.ruff.lint]
+select = [
+  "E",  # pycodestyle errors
+  "W",  # pycodestyle warnings
+  "F",  # pyflakes (real bugs)
+  "I",  # import sorting (replaces isort)
+  "UP", # safe pyupgrade modernizations
+  "B",     # flake8-bugbear (correctness)
+  "C4",    # comprehensions (readability/speed)
+  "SIM",   # flake8-simplify
+  "PERF",  # perflint (micro perf wins)
+  "RUF",   # ruff-native rules (e.g., RUF100 for stray noqa)
+  "TCH",   # type-checking imports hygiene (TYPE_CHECKING blocks)
+  "FA",    # future-annotations (FA102 ensures it's at top)
+  "COM",   # trailing commas
+]
+extend-select = [
+  "N",    # pep8-naming (consistent names)
+  "ARG",  # unused function args (helpful in library code)
+  "RET",  # return-path consistency
+  "PTH",  # pathlib over os.path
+  "G",    # logging format (avoid %-style on f-strings, etc.)
+  "ERA",  # commented-out code
+  "D",    # pydocstyle via Ruff (docs on public API)
+]
+ignore = [
+  "E501",   # let the formatter wrap long lines
+  "D203",   # (conflicts with D211) blank line before class
+  "D213",   # (conflicts with D212) summary on second line
+  "COM812", # trailing comma conflicts with formatter
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["onionnet"]
+force-sort-within-sections = true
+combine-as-imports = true
+# If you rely on runtime import side-effects in a few modules, we’ll pin them below.
+
+[tool.ruff.lint.per-file-ignores]
+"docs/source/conf.py" = ["E402", "D"] # path hacks need early imports
+"onionnet/**/__init__.py" = ["F401","I001", "D"]
+"tests/**" = ["S101","PT011","PT012","RET504", "D", "N", "N802", "N803"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.pyright]
+typeCheckingMode = "strict"
