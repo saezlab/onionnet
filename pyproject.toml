@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "onionnet"
-version = "1.1.0"
+version = "1.2.1"
 description = "A package for creating and analysing large mulilayered networks using graph-tool."
 readme = "README.md"
 requires-python = ">=3.10"

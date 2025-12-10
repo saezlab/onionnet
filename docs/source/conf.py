@@ -6,7 +6,7 @@
 project = "OnionNet"
 author = "Macabe Daley"
 copyright = "2025, Macabe Daley"
-release = "1.0.0"
+release = "1.2.1"
 
 # -- General configuration ---------------------------------------------------
 
